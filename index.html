@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>党史军史答题闯关挑战</title>
+    <title>张思德传人答题闯关挑战(内测版)</title>
     <script src="https://cdn.tailwindcss.com">
     </script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
@@ -121,7 +121,7 @@
     </header>
 
     <footer id="globalFooter">
-        <div class="footer-text">— 张思德传人公众号制作 —</div>
+        <div class="footer-text">— 张思德传人公众号制作(内测版本) —</div>
     </footer>
 
     <div id="floatingTextContainer"></div>
@@ -966,56 +966,58 @@
         //  答题逻辑
         // ============================================================
         function renderQuestion() {
-            var item = quizQuestions[quizIndex];
-            if (!item) return;
-            document.getElementById('currentNum').textContent = quizIndex + 1;
-            document.getElementById('questionText').textContent = item.q;
+    var item = quizQuestions[quizIndex];
+    if (!item) return;
+    document.getElementById('currentNum').textContent = quizIndex + 1;
+    document.getElementById('questionText').textContent = item.q;
 
-            var optBox = document.getElementById('optionBox');
-            optBox.innerHTML = '';
-            var keys = ['A', 'B', 'C', 'D'];
-            for (var k = 0; k < keys.length; k++) {
-                var key = keys[k];
-                if (!item.opt[key]) continue;
-                var div = document.createElement('div');
-                div.className = 'option-item border border-gray-300 rounded-lg p-4 active:bg-primaryBg cursor-pointer';
-                div.innerHTML = '<span class="font-bold">' + key + '.</span> ' + item.opt[key];
-                div.dataset.key = key;
-                div.onclick = (function(k2) { return function() { selectAnswer(k2, div); }; })(key);
-                optBox.appendChild(div);
+    var optBox = document.getElementById('optionBox');
+    optBox.innerHTML = '';
+    var keys = ['A', 'B', 'C', 'D'];
+    
+    keys.forEach(function(key) {
+        if (!item.opt[key]) return;
+        var div = document.createElement('div');
+        div.className = 'option-item border border-gray-300 rounded-lg p-4 active:bg-primaryBg cursor-pointer';
+        div.innerHTML = '<span class="font-bold">' + key + '.</span> ' + item.opt[key];
+        div.dataset.key = key;
+        div.onclick = function() {
+            selectAnswer(key, div);
+        };
+        optBox.appendChild(div);
+    });
+
+    document.getElementById('tipBox').classList.add('hidden');
+    var nextBtn = document.getElementById('nextBtn');
+    nextBtn.disabled = true;
+    nextBtn.className = 'w-full bg-gray-400 text-white py-3 rounded-lg font-medium disabled:opacity-60';
+    isAnswering = false;
+
+    var cfg = getAdminConfig();
+    if (cfg.timer && (currentMode === 'ranked' || currentMode === 'challenge')) {
+        var limit = currentMode === 'ranked' ? 20 : 15;
+        timeLeft = limit;
+        document.getElementById('timerRing').textContent = timeLeft;
+        document.getElementById('timerRing').className = 'timer-ring';
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(function() {
+            timeLeft--;
+            document.getElementById('timerRing').textContent = timeLeft;
+            if (timeLeft <= 5) document.getElementById('timerRing').className = 'timer-ring warning';
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                if (!isAnswering) {
+                    handleTimeout();
+                }
             }
-
-            document.getElementById('tipBox').classList.add('hidden');
-            var nextBtn = document.getElementById('nextBtn');
-            nextBtn.disabled = true;
-            nextBtn.className = 'w-full bg-gray-400 text-white py-3 rounded-lg font-medium disabled:opacity-60';
-            isAnswering = false;
-
-            var cfg = getAdminConfig();
-            if (cfg.timer && (currentMode === 'ranked' || currentMode === 'challenge')) {
-                var limit = currentMode === 'ranked' ? 20 : 15;
-                timeLeft = limit;
-                document.getElementById('timerRing').textContent = timeLeft;
-                document.getElementById('timerRing').className = 'timer-ring';
-                if (timerInterval) clearInterval(timerInterval);
-                timerInterval = setInterval(function() {
-                    timeLeft--;
-                    document.getElementById('timerRing').textContent = timeLeft;
-                    if (timeLeft <= 5) document.getElementById('timerRing').className = 'timer-ring warning';
-                    if (timeLeft <= 0) {
-                        clearInterval(timerInterval);
-                        timerInterval = null;
-                        if (!isAnswering) {
-                            handleTimeout();
-                        }
-                    }
-                }, 1000);
-            } else {
-                document.getElementById('timerRing').textContent = '--';
-                document.getElementById('timerRing').className = 'timer-ring';
-                if (timerInterval) { clearInterval(timerInterval);
-                    timerInterval = null; }
-            }
+        }, 1000);
+    } else {
+        document.getElementById('timerRing').textContent = '--';
+        document.getElementById('timerRing').className = 'timer-ring';
+        if (timerInterval) { clearInterval(timerInterval);
+            timerInterval = null; }
+    }
         }
 
         function handleTimeout() {
