@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>张思德传人答题闯关挑战(内测版)</title>
+    <title>党史军史答题闯关挑战</title>
     <script src="https://cdn.tailwindcss.com">
     </script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
@@ -121,12 +121,12 @@
     </header>
 
     <footer id="globalFooter">
-        <div class="footer-text">— 张思德传人公众号制作(内测版本) —</div>
+        <div class="footer-text">— 张思德传人公众号制作 —</div>
     </footer>
 
     <div id="floatingTextContainer"></div>
 
-    <!-- ===== 欢迎弹窗 ===== -->
+    <!-- 欢迎弹窗 -->
     <div id="welcomeModal" class="modal-box hidden">
         <div class="modal-inner">
             <h3 class="text-lg font-bold text-primary mb-4">📩 战队欢迎信函</h3>
@@ -135,7 +135,7 @@
         </div>
     </div>
 
-    <!-- ===== 登录页 ===== -->
+    <!-- 登录页 -->
     <div id="loginPage" class="page">
         <div class="max-w-md mx-auto pt-6 p-5">
             <div class="bg-white rounded-xl shadow-md p-6">
@@ -159,7 +159,7 @@
         </div>
     </div>
 
-    <!-- ===== 注册页 ===== -->
+    <!-- 注册页 -->
     <div id="registerPage" class="page active">
         <div class="max-w-md mx-auto pt-6 p-5">
             <div class="bg-white rounded-xl shadow-md p-6">
@@ -197,7 +197,7 @@
         </div>
     </div>
 
-    <!-- ===== 主菜单页 ===== -->
+    <!-- 主菜单页 -->
     <div id="mainPage" class="page">
         <div class="max-w-md mx-auto pt-3 p-5">
             <div class="bg-white rounded-xl shadow-md p-5 mb-4">
@@ -278,7 +278,7 @@
         </div>
     </div>
 
-    <!-- ===== 答题页 ===== -->
+    <!-- 答题页 -->
     <div id="quizPage" class="page quiz-mode">
         <div class="max-w-md mx-auto pt-2 p-5">
             <div class="bg-white rounded-xl shadow-md p-5">
@@ -310,7 +310,7 @@
         </div>
     </div>
 
-    <!-- ===== 结果页 ===== -->
+    <!-- 结果页 -->
     <div id="resultPage" class="page quiz-mode">
         <div class="max-w-md mx-auto pt-6 p-5 text-center">
             <div class="bg-white rounded-xl shadow-md p-8">
@@ -329,7 +329,7 @@
         </div>
     </div>
 
-    <!-- ===== 排行榜页 ===== -->
+    <!-- 排行榜页 -->
     <div id="rankPage" class="page">
         <div class="max-w-md mx-auto pt-3 p-5">
             <div class="bg-white rounded-xl shadow-md p-5">
@@ -354,7 +354,7 @@
         </div>
     </div>
 
-    <!-- ===== 管理员登录 ===== -->
+    <!-- 管理员登录 -->
     <div id="adminLogin" class="page">
         <div class="max-w-md mx-auto pt-6 p-5">
             <div class="bg-white rounded-xl shadow-md p-6">
@@ -369,7 +369,7 @@
         </div>
     </div>
 
-    <!-- ===== 管理员后台 ===== -->
+    <!-- 管理员后台 -->
     <div id="adminPage" class="page">
         <div class="max-w-md mx-auto pt-3 p-5 space-y-4">
             <div class="bg-white rounded-xl shadow p-5">
@@ -963,7 +963,7 @@
         }
 
         // ============================================================
-        //  答题逻辑
+        //  答题逻辑（修复版本）
         // ============================================================
         function renderQuestion() {
             var item = quizQuestions[quizIndex];
@@ -974,6 +974,8 @@
             var optBox = document.getElementById('optionBox');
             optBox.innerHTML = '';
             var keys = ['A', 'B', 'C', 'D'];
+
+            // 使用 for 循环避免闭包问题
             for (var k = 0; k < keys.length; k++) {
                 var key = keys[k];
                 if (!item.opt[key]) continue;
@@ -981,7 +983,12 @@
                 div.className = 'option-item border border-gray-300 rounded-lg p-4 active:bg-primaryBg cursor-pointer';
                 div.innerHTML = '<span class="font-bold">' + key + '.</span> ' + item.opt[key];
                 div.dataset.key = key;
-                div.onclick = (function(k2) { return function() { selectAnswer(k2, div); }; })(key);
+                div.dataset.index = k;
+                // 直接绑定 onclick，不使用闭包
+                div.onclick = function() {
+                    var selectedKey = this.dataset.key;
+                    selectAnswer(selectedKey, this);
+                };
                 optBox.appendChild(div);
             }
 
@@ -1052,7 +1059,10 @@
         }
 
         function selectAnswer(selKey, dom) {
+            // 如果已经回答过了，忽略后续点击
             if (isAnswering) return;
+
+            // 立即标记为已回答，防止重复点击
             isAnswering = true;
             if (timerInterval) { clearInterval(timerInterval);
                 timerInterval = null; }
@@ -1062,7 +1072,11 @@
             var tipBox = document.getElementById('tipBox');
             var tipText = document.getElementById('tipText');
             var allOpt = document.querySelectorAll('.option-item');
-            for (var i = 0; i < allOpt.length; i++) { allOpt[i].onclick = null; }
+
+            // 禁用所有选项的点击事件
+            for (var i = 0; i < allOpt.length; i++) {
+                allOpt[i].onclick = null;
+            }
 
             var cfg = getAdminConfig();
             var addScore = 0;
