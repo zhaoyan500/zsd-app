@@ -261,15 +261,12 @@
                 </div>
             </div>
 
-            <div class="mt-5 grid grid-cols-2 gap-3">
-                <button onclick="showPage('rankPage')" class="bg-white rounded-xl shadow p-4 text-center border border-gray-200">
-                    <i class="fa fa-trophy text-2xl text-yellow-500"></i>
-                    <p class="text-sm font-medium mt-1">总榜排名</p>
-                </button>
-                <button onclick="showPage('rankPage'); setRankFilter('unit')" class="bg-white rounded-xl shadow p-4 text-center border border-gray-200">
-                    <i class="fa fa-users text-2xl text-primary"></i>
-                    <p class="text-sm font-medium mt-1">战队排名</p>
-                </button>
+            <div class="mt-5 flex justify-center">
+                 <button onclick="showPage('rankPage')" class="w-full max-w-xs bg-white rounded-xl shadow p-4 text-center border border-gray-200">
+                     <i class="fa fa-trophy text-3xl text-yellow-500"></i>
+                     <p class="text-base font-medium mt-1">🏅 排行榜</p>
+                     <p class="text-xs text-gray-400 mt-0.5">查看总榜 · 战队榜 · 月榜 · 周榜</p>
+                 </button>
             </div>
 
             <div class="mt-4 text-center">
@@ -662,13 +659,15 @@
             try {
                 var result = await apiCall('/users', 'GET');
                 if (Array.isArray(result)) {
-                    return result.map(normalizeUser);
-                }
-                return [];
-            } catch (error) {
-                console.error('获取用户列表失败:', error);
-                return [];
-            }
+                var normalized = result.map(normalizeUser);
+                cachedUsers = normalized;
+                return normalized;
+             }
+             return [];
+        } catch (error) {
+             console.error('获取用户列表失败:', error);
+             return [];
+           }
         }
 
         async function fetchUnitUsers(unit) {
@@ -1254,150 +1253,164 @@
         }
 
         function populateTeamSelector() {
-            var list = cachedUsers;
-            var teams = [];
-            var teamSet = {};
-            for (var i = 0; i < list.length; i++) {
-                var t = list[i].unit;
-                if (t && !teamSet[t]) { teamSet[t] = true;
-                    teams.push(t); }
-            }
-            var select = document.getElementById('selectedTeam');
-            select.innerHTML = '';
-            for (var j = 0; j < teams.length; j++) {
-                var opt = document.createElement('option');
-                opt.value = teams[j];
-                opt.textContent = teams[j];
-                select.appendChild(opt);
-            }
-            if (teams.length === 0) select.innerHTML = '<option value="">暂无战队</option>';
+    var list = cachedUsers.length > 0 ? cachedUsers : [];
+    var teams = [];
+    var teamSet = {};
+    for (var i = 0; i < list.length; i++) {
+        var t = list[i].unit;
+        if (t && !teamSet[t]) { teamSet[t] = true;
+            teams.push(t); }
+    }
+    var select = document.getElementById('selectedTeam');
+    select.innerHTML = '';
+    if (teams.length === 0) {
+        select.innerHTML = '<option value="">暂无战队</option>';
+    } else {
+        for (var j = 0; j < teams.length; j++) {
+            var opt = document.createElement('option');
+            opt.value = teams[j];
+            opt.textContent = teams[j];
+            select.appendChild(opt);
+        }
+    }
         }
 
-        async function renderRank() {
-            var rankBox = document.getElementById('rankList');
-            var teamTotalBox = document.getElementById('teamTotalList');
+       async function renderRank() {
+    var rankBox = document.getElementById('rankList');
+    var teamTotalBox = document.getElementById('teamTotalList');
 
-            showLoading();
+    showLoading();
 
-            try {
-                if (rankFilter === 'total') {
-                    var list = await fetchAllUsers();
-                    cachedUsers = list;
-                    var sorted = list.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); });
-                    var html = '<div class="rank-section-title">🏆 个人总积分排行</div>';
-                    if (sorted.length === 0) {
-                        html += '<p class="text-center text-gray-400 py-4">暂无用户数据</p>';
-                    } else {
-                        for (var i = 0; i < sorted.length; i++) {
-                            var u = sorted[i];
-                            var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
-                            html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
-                                '<div><span class="font-bold text-primary">' + medal + '</span><span class="ml-2">' + u
-                                .name + '</span><span class="text-gray-400 text-xs ml-1">(' + u.unit + ')</span></div>' +
-                                '<span class="font-bold text-success">' + (u.totalScore || 0) + '分</span>' +
-                                '</div>';
-                        }
-                    }
-                    rankBox.innerHTML = html;
+    try {
+        var allUsers = await fetchAllUsers();
+        cachedUsers = allUsers;
 
-                    var teamMap = {};
-                    for (var k = 0; k < list.length; k++) {
-                        if (list[k].unit) teamMap[list[k].unit] = (teamMap[list[k].unit] || 0) + (list[k].totalScore || 0);
-                    }
-                    var teamSorted = Object.keys(teamMap).sort(function(a, b) { return teamMap[b] - teamMap[a]; });
-                    var teamHtml = '';
-                    if (teamSorted.length === 0) {
-                        teamHtml = '<p class="text-center text-gray-400 py-2">暂无战队数据</p>';
-                    } else {
-                        for (var m = 0; m < teamSorted.length; m++) {
-                            var team = teamSorted[m];
-                            var medal2 = m === 0 ? '🥇' : m === 1 ? '🥈' : m === 2 ? '🥉' : (m + 1);
-                            teamHtml += '<div class="flex justify-between items-center p-2 bg-grayLight rounded-lg">' +
-                                '<div><span class="font-bold text-primary">' + medal2 + '</span><span class="ml-2">' +
-                                team + '</span></div>' +
-                                '<span class="font-bold text-success">' + teamMap[team] + '分</span>' +
-                                '</div>';
-                        }
-                    }
-                    teamTotalBox.innerHTML = teamHtml;
-                    document.getElementById('teamTotalRank').classList.remove('hidden');
-
-                } else if (rankFilter === 'unit') {
-                    var select = document.getElementById('selectedTeam');
-                    var team = select.value;
-                    if (!team) {
-                        rankBox.innerHTML = '<p class="text-center text-gray-400 py-4">请先选择一个战队</p>';
-                        hideLoading();
-                        return;
-                    }
-                    var members = await fetchUnitUsers(team);
-                    var sorted2 = members.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); });
-                    var html2 = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>';
-                    if (sorted2.length === 0) {
-                        html2 += '<p class="text-center text-gray-400 py-4">该战队暂无成员</p>';
-                    } else {
-                        for (var n = 0; n < sorted2.length; n++) {
-                            var u2 = sorted2[n];
-                            var medal3 = n === 0 ? '🥇' : n === 1 ? '🥈' : n === 2 ? '🥉' : (n + 1);
-                            html2 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
-                                '<div><span class="font-bold text-primary">' + medal3 + '</span><span class="ml-2">' +
-                                u2.name + '</span></div>' +
-                                '<span class="font-bold text-success">' + (u2.totalScore || 0) + '分</span>' +
-                                '</div>';
-                        }
-                    }
-                    rankBox.innerHTML = html2;
-
-                } else if (rankFilter === 'month' || rankFilter === 'week') {
-                    var list2 = await fetchAllUsers();
-                    var now = new Date();
-                    var isMonth = rankFilter === 'month';
-                    var periodStart = isMonth ?
-                        new Date(now.getFullYear(), now.getMonth(), 1) :
-                        (function() { var d = new Date(now);
-                            d.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)); return d; })();
-                    var periodEnd = isMonth ?
-                        new Date(now.getFullYear(), now.getMonth() + 1, 0) :
-                        now;
-                    var filtered = list2.filter(function(u) {
-                        var checkDate = function(dateStr) {
-                            if (!dateStr) return false;
-                            try { var d = new Date(dateStr); return d >= periodStart && d <= periodEnd; } catch (
-                            e) { return false; }
-                        };
-                        if (checkDate(u.warmupDate)) return true;
-                        if (u.rankHistory && u.rankHistory.some(function(h) { return checkDate(h.date); })) return true;
-                        if (u.challengeHistory && u.challengeHistory.some(function(h) { return checkDate(h.date); }))
-                            return true;
-                        return false;
-                    });
-                    var sorted3 = filtered.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); })
-                        .slice(0, 10);
-                    var html3 = '<div class="rank-section-title">' + (isMonth ? '📅 月榜（本月前10）' :
-                        '📅 周榜（本周前10）') + '</div>';
-                    if (sorted3.length === 0) {
-                        html3 += '<p class="text-center text-gray-400 py-4">本月/本周暂无活跃用户</p>';
-                    } else {
-                        for (var p = 0; p < sorted3.length; p++) {
-                            var u3 = sorted3[p];
-                            var medal4 = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
-                            html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
-                                '<div><span class="font-bold text-primary">' + medal4 + '</span><span class="ml-2">' +
-                                u3.name + '</span><span class="text-gray-400 text-xs ml-1">(' + u3.unit +
-                                ')</span></div>' +
-                                '<span class="font-bold text-success">' + (u3.totalScore || 0) + '分</span>' +
-                                '</div>';
-                        }
-                    }
-                    rankBox.innerHTML = html3;
+        if (rankFilter === 'total') {
+            var sorted = allUsers.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); });
+            var html = '<div class="rank-section-title">🏆 个人总积分排行</div>';
+            if (sorted.length === 0) {
+                html += '<p class="text-center text-gray-400 py-4">暂无用户数据，快去注册参与答题吧！</p>';
+            } else {
+                for (var i = 0; i < sorted.length; i++) {
+                    var u = sorted[i];
+                    var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+                    html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
+                        '<div><span class="font-bold text-primary">' + medal + '</span><span class="ml-2">' + u
+                        .name + '</span><span class="text-gray-400 text-xs ml-1">(' + u.unit + ')</span></div>' +
+                        '<span class="font-bold text-success">' + (u.totalScore || 0) + '分</span>' +
+                        '</div>';
                 }
-                hideLoading();
-            } catch (error) {
-                console.error('加载排行榜失败:', error);
-                rankBox.innerHTML = '<p class="text-center text-red-500 py-4">加载失败，请刷新重试</p>';
-                hideLoading();
             }
+            rankBox.innerHTML = html;
+
+            var teamMap = {};
+            for (var k = 0; k < allUsers.length; k++) {
+                if (allUsers[k].unit) {
+                    teamMap[allUsers[k].unit] = (teamMap[allUsers[k].unit] || 0) + (allUsers[k].totalScore || 0);
+                }
+            }
+            var teamSorted = Object.keys(teamMap).sort(function(a, b) { return teamMap[b] - teamMap[a]; });
+            var teamHtml = '';
+            if (teamSorted.length === 0) {
+                teamHtml = '<p class="text-center text-gray-400 py-2">暂无战队数据</p>';
+            } else {
+                for (var m = 0; m < teamSorted.length; m++) {
+                    var team = teamSorted[m];
+                    var medal2 = m === 0 ? '🥇' : m === 1 ? '🥈' : m === 2 ? '🥉' : (m + 1);
+                    teamHtml += '<div class="flex justify-between items-center p-2 bg-grayLight rounded-lg">' +
+                        '<div><span class="font-bold text-primary">' + medal2 + '</span><span class="ml-2">' +
+                        team + '</span></div>' +
+                        '<span class="font-bold text-success">' + teamMap[team] + '分</span>' +
+                        '</div>';
+                }
+            }
+            teamTotalBox.innerHTML = teamHtml;
+            document.getElementById('teamTotalRank').classList.remove('hidden');
+
+        } else if (rankFilter === 'unit') {
+            var select = document.getElementById('selectedTeam');
+            var team = select.value;
+            if (!team) {
+                rankBox.innerHTML = '<p class="text-center text-gray-400 py-4">请先选择一个战队</p>';
+                hideLoading();
+                return;
+            }
+            var members = await fetchUnitUsers(team);
+            var sorted2 = members.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); });
+            var html2 = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>';
+            if (sorted2.length === 0) {
+                html2 += '<p class="text-center text-gray-400 py-4">该战队暂无成员</p>';
+            } else {
+                for (var n = 0; n < sorted2.length; n++) {
+                    var u2 = sorted2[n];
+                    var medal3 = n === 0 ? '🥇' : n === 1 ? '🥈' : n === 2 ? '🥉' : (n + 1);
+                    html2 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
+                        '<div><span class="font-bold text-primary">' + medal3 + '</span><span class="ml-2">' +
+                        u2.name + '</span></div>' +
+                        '<span class="font-bold text-success">' + (u2.totalScore || 0) + '分</span>' +
+                        '</div>';
+                }
+            }
+            rankBox.innerHTML = html2;
+            document.getElementById('teamTotalRank').classList.add('hidden');
+
+        } else if (rankFilter === 'month' || rankFilter === 'week') {
+            var now = new Date();
+            var isMonth = rankFilter === 'month';
+            var periodStart = isMonth ?
+                new Date(now.getFullYear(), now.getMonth(), 1) :
+                (function() { var d = new Date(now);
+                    d.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)); return d; })();
+            
+            var filtered = allUsers.filter(function(u) {
+                var checkDate = function(dateStr) {
+                    if (!dateStr) return false;
+                    try { 
+                        var d = new Date(dateStr);
+                        var dStart = new Date(d);
+                        dStart.setHours(0, 0, 0, 0);
+                        var pStart = new Date(periodStart);
+                        pStart.setHours(0, 0, 0, 0);
+                        var pEnd = new Date(now);
+                        pEnd.setHours(23, 59, 59, 999);
+                        return dStart >= pStart && dStart <= pEnd;
+                    } catch (e) { 
+                        return false; 
+                    }
+                };
+                if (checkDate(u.warmupDate)) return true;
+                if (u.rankHistory && u.rankHistory.some(function(h) { return checkDate(h.date); })) return true;
+                if (u.challengeHistory && u.challengeHistory.some(function(h) { return checkDate(h.date); })) return true;
+                return false;
+            });
+            
+            var sorted3 = filtered.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); }).slice(0, 10);
+            var html3 = '<div class="rank-section-title">' + (isMonth ? '📅 月榜（本月前10）' :
+                '📅 周榜（本周前10）') + '</div>';
+            if (sorted3.length === 0) {
+                html3 += '<p class="text-center text-gray-400 py-4">本月/本周暂无活跃用户</p>';
+            } else {
+                for (var p = 0; p < sorted3.length; p++) {
+                    var u3 = sorted3[p];
+                    var medal4 = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
+                    html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
+                        '<div><span class="font-bold text-primary">' + medal4 + '</span><span class="ml-2">' +
+                        u3.name + '</span><span class="text-gray-400 text-xs ml-1">(' + u3.unit +
+                        ')</span></div>' +
+                        '<span class="font-bold text-success">' + (u3.totalScore || 0) + '分</span>' +
+                        '</div>';
+                }
+            }
+            rankBox.innerHTML = html3;
+            document.getElementById('teamTotalRank').classList.add('hidden');
         }
+        hideLoading();
+    } catch (error) {
+        console.error('加载排行榜失败:', error);
+        rankBox.innerHTML = '<p class="text-center text-red-500 py-4">加载失败，请刷新重试</p>';
+        hideLoading();
+    }
+       }
 
         // ============================================================
         //  管理员后台
