@@ -343,7 +343,6 @@
                     <select id="selectedTeam" class="w-full border rounded px-3 py-2" onchange="renderRank()"></select>
                 </div>
                 <div id="rankList" class="space-y-2 max-h-[60vh] overflow-y-auto"></div>
-                <!-- 战队总积分排行 - 只在总榜显示 -->
                 <div id="teamTotalRank" class="mt-6 hidden">
                     <div id="teamTotalList" class="space-y-2"></div>
                 </div>
@@ -1230,7 +1229,7 @@
         }
 
         // ============================================================
-        //  排行榜（修复重复标题）
+        //  排行榜（完全修复版）
         // ============================================================
         function setRankFilter(type) {
             rankFilter = type;
@@ -1242,6 +1241,7 @@
             var teamTotal = document.getElementById('teamTotalRank');
             if (type === 'unit') {
                 sel.classList.remove('hidden');
+                // 填充战队列表
                 populateTeamSelector();
                 teamTotal.classList.add('hidden');
             } else {
@@ -1259,20 +1259,41 @@
             var list = cachedUsers;
             var teams = [];
             var teamSet = {};
-            for (var i = 0; i < list.length; i++) {
-                var t = list[i].unit;
-                if (t && !teamSet[t]) { teamSet[t] = true;
-                    teams.push(t); }
+
+            // 从缓存用户中提取战队
+            if (list && list.length > 0) {
+                for (var i = 0; i < list.length; i++) {
+                    var t = list[i].unit;
+                    if (t && !teamSet[t]) {
+                        teamSet[t] = true;
+                        teams.push(t);
+                    }
+                }
             }
+
+            // 如果缓存为空，使用默认战队列表
+            if (teams.length === 0) {
+                var defaultTeams = ['400战队', '055战队', '114战队', '343战队', '霞光战队', '神秘小分队'];
+                for (var j = 0; j < defaultTeams.length; j++) {
+                    if (!teamSet[defaultTeams[j]]) {
+                        teamSet[defaultTeams[j]] = true;
+                        teams.push(defaultTeams[j]);
+                    }
+                }
+            }
+
             var select = document.getElementById('selectedTeam');
             select.innerHTML = '';
-            for (var j = 0; j < teams.length; j++) {
-                var opt = document.createElement('option');
-                opt.value = teams[j];
-                opt.textContent = teams[j];
-                select.appendChild(opt);
+            if (teams.length === 0) {
+                select.innerHTML = '<option value="">暂无战队</option>';
+            } else {
+                for (var k = 0; k < teams.length; k++) {
+                    var opt = document.createElement('option');
+                    opt.value = teams[k];
+                    opt.textContent = teams[k];
+                    select.appendChild(opt);
+                }
             }
-            if (teams.length === 0) select.innerHTML = '<option value="">暂无战队</option>';
         }
 
         async function renderRank() {
@@ -1283,11 +1304,15 @@
             showLoading();
 
             try {
+                // 获取数据
                 var response = await fetch(API_BASE + '/users');
                 var data = await response.json();
                 
                 var list = data.users || data;
                 var teamRanking = data.teamRanking || [];
+
+                // 缓存数据，供 populateTeamSelector 使用
+                cachedUsers = list;
 
                 if (rankFilter === 'total') {
                     // ===== 个人总积分排行 =====
@@ -1308,7 +1333,7 @@
                     }
                     rankBox.innerHTML = html;
 
-                    // ===== 战队总积分排行（只在这里显示一次） =====
+                    // ===== 战队总积分排行 =====
                     var teamHtml = '<div class="rank-section-title">🏢 战队总积分排行</div>';
                     if (teamRanking.length === 0) {
                         teamHtml += '<p class="text-center text-gray-400 py-2">暂无战队数据</p>';
@@ -1330,36 +1355,37 @@
                     // ===== 战队内部成员排行 =====
                     teamTotalRank.classList.add('hidden');
                     
+                    // 确保战队选择器有数据
+                    populateTeamSelector();
+                    
                     var select = document.getElementById('selectedTeam');
                     var team = select.value;
-                    if (!team) {
-                        rankBox.innerHTML = '<p class="text-center text-gray-400 py-4">请先选择一个战队</p>';
+                    if (!team || team === '') {
+                        rankBox.innerHTML = '<div class="text-center text-gray-400 py-4">请选择战队查看内部排行</div>';
                         hideLoading();
                         return;
                     }
 
-                    var selectedTeamData = null;
-                    for (var t = 0; t < teamRanking.length; t++) {
-                        if (teamRanking[t].unit === team) {
-                            selectedTeamData = teamRanking[t];
-                            break;
-                        }
+                    // 从数据中筛选该战队成员
+                    var members = list.filter(function(u) { return u.unit === team; });
+                    
+                    // 计算战队总积分
+                    var teamTotal = 0;
+                    for (var n = 0; n < members.length; n++) {
+                        teamTotal += (members[n].totalScore || 0);
                     }
 
+                    var sorted2 = members.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); });
                     var html2 = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>' +
                         '<div class="text-sm text-gray-500 mb-3">战队总积分：<b class="text-primary">' + 
-                        (selectedTeamData ? selectedTeamData.totalScore : 0) + '分</b> | 成员：' + 
-                        (selectedTeamData ? selectedTeamData.memberCount : 0) + '人</div>';
+                        teamTotal + '分</b> | 成员：' + members.length + '人</div>';
 
-                    if (!selectedTeamData || selectedTeamData.members.length === 0) {
+                    if (sorted2.length === 0) {
                         html2 += '<p class="text-center text-gray-400 py-4">该战队暂无成员</p>';
                     } else {
-                        var members = selectedTeamData.members.slice().sort(function(a, b) { 
-                            return (b.totalScore || 0) - (a.totalScore || 0); 
-                        });
-                        for (var n = 0; n < members.length; n++) {
-                            var u2 = members[n];
-                            var medal3 = n === 0 ? '🥇' : n === 1 ? '🥈' : n === 2 ? '🥉' : (n + 1);
+                        for (var p = 0; p < sorted2.length; p++) {
+                            var u2 = sorted2[p];
+                            var medal3 = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
                             html2 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
                                 '<div><span class="font-bold text-primary">' + medal3 + '</span><span class="ml-2">' +
                                 u2.name + '</span></div>' +
@@ -1401,9 +1427,9 @@
                     if (sorted3.length === 0) {
                         html3 += '<p class="text-center text-gray-400 py-4">本月/本周暂无活跃用户</p>';
                     } else {
-                        for (var p = 0; p < sorted3.length; p++) {
-                            var u3 = sorted3[p];
-                            var medal4 = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
+                        for (var q = 0; q < sorted3.length; q++) {
+                            var u3 = sorted3[q];
+                            var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
                             html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
                                 '<div><span class="font-bold text-primary">' + medal4 + '</span><span class="ml-2">' +
                                 u3.name + '</span><span class="text-gray-400 text-xs ml-1">(' + u3.unit +
@@ -1537,6 +1563,7 @@
 
             document.getElementById('modalConfirmBtn').addEventListener('click', closeModal);
 
+            // 预加载用户数据
             fetchAllUsers().then(function(list) {
                 cachedUsers = list;
             }).catch(function() {});
