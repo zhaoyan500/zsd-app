@@ -817,6 +817,35 @@
         //  页面切换
         // ============================================================
         function showPage(pageId) {
+    document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+    var el = document.getElementById(pageId);
+    if (el) {
+        el.classList.add('active');
+        var header = document.getElementById('globalHeader');
+        var isQuizMode = (pageId === 'quizPage' || pageId === 'resultPage');
+        if (isQuizMode) {
+            header.classList.add('compact');
+            el.classList.add('quiz-mode');
+        } else {
+            header.classList.remove('compact');
+            el.classList.remove('quiz-mode');
+        }
+        if (pageId === 'rankPage') {
+            // 先获取数据再渲染排行榜
+            fetchAllUsers().then(function() {
+                renderRank();
+            }).catch(function() {
+                renderRank();
+            });
+        }
+        if (pageId === 'adminPage') renderAdminData();
+        if (pageId === 'mainPage') updateMainUI();
+    }
+        }
+        
+        
+        
+       /** function showPage(pageId) {
             document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
             var el = document.getElementById(pageId);
             if (el) {
@@ -834,7 +863,7 @@
                 if (pageId === 'adminPage') renderAdminData();
                 if (pageId === 'mainPage') updateMainUI();
             }
-        }
+        }*/
 
         function closeModal() {
             document.getElementById('welcomeModal').classList.add('hidden');
