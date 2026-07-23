@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>张思德传人答题闯关挑战(内测版)</title>
+    <title>党史军史答题闯关挑战</title>
     <script src="https://cdn.tailwindcss.com">
     </script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
@@ -121,7 +121,7 @@
     </header>
 
     <footer id="globalFooter">
-        <div class="footer-text">— 张思德传人公众号制作(内测版本) —</div>
+        <div class="footer-text">— 张思德传人公众号制作 —</div>
     </footer>
 
     <div id="floatingTextContainer"></div>
@@ -664,19 +664,6 @@
                 return [];
             } catch (error) {
                 console.error('获取用户列表失败:', error);
-                return [];
-            }
-        }
-
-        async function fetchUnitUsers(unit) {
-            try {
-                var result = await apiCall('/unit/' + encodeURIComponent(unit), 'GET');
-                if (Array.isArray(result)) {
-                    return result.map(normalizeUser);
-                }
-                return [];
-            } catch (error) {
-                console.error('获取战队用户失败:', error);
                 return [];
             }
         }
@@ -1241,7 +1228,6 @@
             var teamTotal = document.getElementById('teamTotalRank');
             if (type === 'unit') {
                 sel.classList.remove('hidden');
-                // 填充战队列表
                 populateTeamSelector();
                 teamTotal.classList.add('hidden');
             } else {
@@ -1256,43 +1242,17 @@
         }
 
         function populateTeamSelector() {
-            var list = cachedUsers;
-            var teams = [];
-            var teamSet = {};
-
-            // 从缓存用户中提取战队
-            if (list && list.length > 0) {
-                for (var i = 0; i < list.length; i++) {
-                    var t = list[i].unit;
-                    if (t && !teamSet[t]) {
-                        teamSet[t] = true;
-                        teams.push(t);
-                    }
-                }
-            }
-
-            // 如果缓存为空，使用默认战队列表
-            if (teams.length === 0) {
-                var defaultTeams = ['400战队', '055战队', '114战队', '343战队', '霞光战队', '神秘小分队'];
-                for (var j = 0; j < defaultTeams.length; j++) {
-                    if (!teamSet[defaultTeams[j]]) {
-                        teamSet[defaultTeams[j]] = true;
-                        teams.push(defaultTeams[j]);
-                    }
-                }
-            }
-
             var select = document.getElementById('selectedTeam');
             select.innerHTML = '';
-            if (teams.length === 0) {
-                select.innerHTML = '<option value="">暂无战队</option>';
-            } else {
-                for (var k = 0; k < teams.length; k++) {
-                    var opt = document.createElement('option');
-                    opt.value = teams[k];
-                    opt.textContent = teams[k];
-                    select.appendChild(opt);
-                }
+            
+            // 使用注册页面的战队列表
+            var defaultTeams = ['400战队', '055战队', '114战队', '343战队', '霞光战队', '神秘小分队'];
+            
+            for (var k = 0; k < defaultTeams.length; k++) {
+                var opt = document.createElement('option');
+                opt.value = defaultTeams[k];
+                opt.textContent = defaultTeams[k];
+                select.appendChild(opt);
             }
         }
 
@@ -1304,15 +1264,10 @@
             showLoading();
 
             try {
-                // 获取数据
                 var response = await fetch(API_BASE + '/users');
                 var data = await response.json();
-                
                 var list = data.users || data;
                 var teamRanking = data.teamRanking || [];
-
-                // 缓存数据，供 populateTeamSelector 使用
-                cachedUsers = list;
 
                 if (rankFilter === 'total') {
                     // ===== 个人总积分排行 =====
@@ -1355,9 +1310,6 @@
                     // ===== 战队内部成员排行 =====
                     teamTotalRank.classList.add('hidden');
                     
-                    // 确保战队选择器有数据
-                    populateTeamSelector();
-                    
                     var select = document.getElementById('selectedTeam');
                     var team = select.value;
                     if (!team || team === '') {
@@ -1366,7 +1318,7 @@
                         return;
                     }
 
-                    // 从数据中筛选该战队成员
+                    // 从 list 中筛选该战队成员
                     var members = list.filter(function(u) { return u.unit === team; });
                     
                     // 计算战队总积分
@@ -1465,6 +1417,12 @@
         async function renderAdminData() {
             try {
                 var list = await fetchAllUsers();
+                // 如果 list 为空，直接从 API 获取
+                if (!list || list.length === 0) {
+                    var response = await fetch(API_BASE + '/users');
+                    var data = await response.json();
+                    list = data.users || data;
+                }
                 var searchVal = (document.getElementById('userSearchInput').value || '').trim().toLowerCase();
                 var filtered = list;
                 if (searchVal) {
