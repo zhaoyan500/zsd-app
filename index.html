@@ -261,14 +261,10 @@
                 </div>
             </div>
 
-            <div class="mt-5 grid grid-cols-2 gap-3">
-                <button onclick="showPage('rankPage')" class="bg-white rounded-xl shadow p-4 text-center border border-gray-200">
+            <div class="mt-5 flex justify-center">
+                <button onclick="showPage('rankPage')" class="bg-white rounded-xl shadow p-4 text-center border border-gray-200 flex items-center gap-3 px-6">
                     <i class="fa fa-trophy text-2xl text-yellow-500"></i>
-                    <p class="text-sm font-medium mt-1">总榜排名</p>
-                </button>
-                <button onclick="showPage('rankPage'); setRankFilter('unit')" class="bg-white rounded-xl shadow p-4 text-center border border-gray-200">
-                    <i class="fa fa-users text-2xl text-primary"></i>
-                    <p class="text-sm font-medium mt-1">战队排名</p>
+                    <span class="text-sm font-medium">🏅 排行榜</span>
                 </button>
             </div>
 
@@ -532,48 +528,108 @@
         }
 
         // ============================================================
-        //  API 调用
+        //  API 调用 (模拟本地存储)
         // ============================================================
         async function apiCall(endpoint, method, data) {
-            var options = {
-                method: method,
-                headers: { 'Content-Type': 'application/json' }
-            };
-            if (data) {
-                options.body = JSON.stringify(data);
-            }
-            try {
-                var response = await fetch(API_BASE + endpoint, options);
-                var result = await response.json();
-                if (result && result.results !== undefined) {
-                    return result.results;
-                }
-                return result;
-            } catch (e) {
-                throw new Error('网络连接失败，请检查网络后重试');
-            }
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    try {
+                        let key = 'db_users';
+                        let users = JSON.parse(localStorage.getItem(key) || '[]');
+                        
+                        if (endpoint === '/register') {
+                            let exist = users.find(u => u.name === data.name);
+                            if (exist) { resolve({ error: '该姓名已被注册' }); return; }
+                            let newUser = {
+                                id: Date.now(),
+                                name: data.name,
+                                unit: data.unit,
+                                pwd: data.pwd,
+                                warmupScore: 0,
+                                warmupDate: '',
+                                rankScore: 0,
+                                rankRemain: 3,
+                                challengeScore: 0,
+                                challengeDate: '',
+                                totalScore: 0,
+                                challengeUsed: 0,
+                                rankDaily: { date: '', used: 0 },
+                                rankHistory: [],
+                                challengeHistory: [],
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            };
+                            users.push(newUser);
+                            localStorage.setItem(key, JSON.stringify(users));
+                            resolve({ user: newUser });
+                            return;
+                        }
+                        if (endpoint === '/login') {
+                            let user = users.find(u => u.name === data.name && u.pwd === data.pwd);
+                            if (!user) { resolve({ error: '姓名或密码错误' }); return; }
+                            resolve({ user: user });
+                            return;
+                        }
+                        if (endpoint === '/save') {
+                            let idx = users.findIndex(u => u.name === data.name);
+                            if (idx !== -1) {
+                                users[idx] = { ...users[idx], ...data.userData, updated_at: new Date().toISOString() };
+                                localStorage.setItem(key, JSON.stringify(users));
+                            }
+                            resolve({ success: true });
+                            return;
+                        }
+                        if (endpoint === '/users') {
+                            resolve(users);
+                            return;
+                        }
+                        if (endpoint.startsWith('/unit/')) {
+                            let unit = decodeURIComponent(endpoint.replace('/unit/', ''));
+                            let filtered = users.filter(u => u.unit === unit);
+                            resolve(filtered);
+                            return;
+                        }
+                        if (endpoint === '/reset-pwd') {
+                            let idx = users.findIndex(u => u.name === data.name);
+                            if (idx !== -1) {
+                                users[idx].pwd = data.newPwd;
+                                localStorage.setItem(key, JSON.stringify(users));
+                            }
+                            resolve({ success: true });
+                            return;
+                        }
+                        if (endpoint === '/clear-all') {
+                            if (data.adminKey === ADMIN_PWD) {
+                                localStorage.setItem(key, JSON.stringify([]));
+                            }
+                            resolve({ success: true });
+                            return;
+                        }
+                        resolve({});
+                    } catch (e) {
+                        reject(e);
+                    }
+                }, 150);
+            });
         }
 
         // ============================================================
-        //  数据适配器 - 兼容 D1 下划线格式
+        //  数据适配器
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
-            if (user.warmupScore !== undefined && user.rankScore !== undefined) {
-                return user;
-            }
             return {
                 id: user.id,
                 name: user.name,
                 unit: user.unit,
-                warmupScore: user.warmup_score || user.warmupScore || 0,
-                warmupDate: user.warmup_date || user.warmupDate || '',
-                rankScore: user.rank_score || user.rankScore || 0,
-                rankRemain: user.rank_remain || user.rankRemain || 3,
-                challengeScore: user.challenge_score || user.challengeScore || 0,
-                challengeDate: user.challenge_date || user.challengeDate || '',
-                totalScore: user.total_score || user.totalScore || 0,
-                challengeUsed: user.challenge_used || user.challengeUsed || 0,
+                warmupScore: user.warmupScore || 0,
+                warmupDate: user.warmupDate || '',
+                rankScore: user.rankScore || 0,
+                rankRemain: user.rankRemain || 3,
+                challengeScore: user.challengeScore || 0,
+                challengeDate: user.challengeDate || '',
+                totalScore: user.totalScore || 0,
+                challengeUsed: user.challengeUsed || 0,
                 rankDaily: user.rankDaily || { date: '', used: 0 },
                 rankHistory: user.rankHistory || [],
                 challengeHistory: user.challengeHistory || [],
@@ -645,7 +701,7 @@
         }
 
         // ============================================================
-        //  保存用户数据到云端
+        //  保存用户数据
         // ============================================================
         async function saveUserToCloud(user) {
             try {
@@ -981,7 +1037,12 @@
                 div.className = 'option-item border border-gray-300 rounded-lg p-4 active:bg-primaryBg cursor-pointer';
                 div.innerHTML = '<span class="font-bold">' + key + '.</span> ' + item.opt[key];
                 div.dataset.key = key;
-                div.onclick = (function(k2) { return function() { selectAnswer(k2, div); }; })(key);
+                // 修复：正确绑定当前key
+                div.onclick = (function(k2) {
+                    return function() {
+                        selectAnswer(k2, this);
+                    };
+                })(key);
                 optBox.appendChild(div);
             }
 
