@@ -1200,7 +1200,7 @@
                 } else {
                     currentUser.warmupScore = Math.max(currentUser.warmupScore || 0, userScore);
                 }
-            } else if (mode === 'ranked') {
+            /*} else if (mode === 'ranked') {
                 if (!currentUser.rankDaily) {
                     currentUser.rankDaily = { date: today, used: 0 };
                 }
@@ -1212,7 +1212,35 @@
                 currentUser.rankRemain = Math.max(0, 3 - currentUser.rankDaily.used);
                 currentUser.rankScore = Math.max(currentUser.rankScore || 0, userScore);
                 if (!currentUser.rankHistory) currentUser.rankHistory = [];
-                currentUser.rankHistory.push({ date: today, score: userScore });
+                currentUser.rankHistory.push({ date: today, score: userScore });*/
+                // 在 endQuiz 函数中，排位赛部分需要确保 rankHistory 正确保存
+} else if (mode === 'ranked') {
+    if (!currentUser.rankDaily) {
+        currentUser.rankDaily = { date: today, used: 0 };
+    }
+    if (currentUser.rankDaily.date !== today) {
+        currentUser.rankDaily = { date: today, used: 1 };
+    } else {
+        currentUser.rankDaily.used = (currentUser.rankDaily.used || 0) + 1;
+    }
+    currentUser.rankRemain = Math.max(0, 3 - currentUser.rankDaily.used);
+    currentUser.rankScore = Math.max(currentUser.rankScore || 0, userScore);
+    // ✅ 确保 rankHistory 被正确保存
+    if (!currentUser.rankHistory) currentUser.rankHistory = [];
+    currentUser.rankHistory.push({ date: today, score: userScore });
+    console.log('排位赛历史已保存:', { date: today, score: userScore });
+}
+
+// 挑战赛部分
+} else if (mode === 'challenge') {
+    currentUser.challengeDate = today;
+    currentUser.challengeUsed = (currentUser.challengeUsed || 0) + 1;
+    currentUser.challengeScore = Math.max(currentUser.challengeScore || 0, userScore);
+    // ✅ 确保 challengeHistory 被正确保存
+    if (!currentUser.challengeHistory) currentUser.challengeHistory = [];
+    currentUser.challengeHistory.push({ date: today, score: userScore });
+    console.log('挑战赛历史已保存:', { date: today, score: userScore });
+        
             } else if (mode === 'challenge') {
                 currentUser.challengeDate = today;
                 currentUser.challengeUsed = (currentUser.challengeUsed || 0) + 1;
