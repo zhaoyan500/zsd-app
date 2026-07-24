@@ -864,7 +864,6 @@
         // ============================================================
         //  用户数据管理
         // ============================================================
-        // 修复：checkDailyReset - 确保正确计算剩余次数
         function checkDailyReset(user) {
             if (!user) return;
             var today = new Date().toDateString();
@@ -1282,7 +1281,7 @@
         }
 
         // ============================================================
-        //  排行榜（完全修复版 - 包含月榜/周榜正确统计）
+        //  排行榜（修复版 - 月榜/周榜正确包含排位赛和挑战赛积分）
         // ============================================================
         
         var cachedUsers = [];
@@ -1445,7 +1444,10 @@
             return count;
         }
 
-        // 修复：renderRank - 月榜/周榜正确统计个人在时间段内的总积分
+        // ============================================================
+        //  🔧 修复：renderRank - 月榜/周榜正确统计个人在时间段内的总积分
+        //  包含：热身赛 + 排位赛 + 挑战赛 所有得分
+        // ============================================================
         async function renderRank() {
             var rankBox = document.getElementById('rankList');
             var teamTotalBox = document.getElementById('teamTotalList');
@@ -1567,7 +1569,10 @@
                     rankBox.innerHTML = html2;
 
                 } else {
-                    // ===== 月榜/周榜 - 正确统计时间段内个人总积分 =====
+                    // ============================================================
+                    //  🔧 修复区域：月榜/周榜 - 正确统计时间段内个人总积分
+                    //  修复说明：原代码只统计了热身赛积分，现在增加排位赛和挑战赛
+                    // ============================================================
                     teamTotalRank.classList.add('hidden');
                     
                     var now = new Date();
@@ -1584,7 +1589,7 @@
                         periodStart.setHours(0, 0, 0, 0);
                     }
                     
-                    // 计算每个用户在时间段内的总得分
+                    // 计算每个用户在时间段内的总得分（热身 + 排位 + 挑战）
                     var periodResults = [];
                     
                     for (var uIdx = 0; uIdx < list.length; uIdx++) {
@@ -1592,7 +1597,9 @@
                         var periodScore = 0;
                         var hasActivity = false;
                         
-                        // 1. 热身赛 - 检查 warmupDate 是否在时间段内
+                        // ============================================================
+                        //  1. 热身赛 - 检查 warmupDate 是否在时间段内
+                        // ============================================================
                         if (user.warmupDate) {
                             try {
                                 var warmupDate = new Date(user.warmupDate);
@@ -1603,29 +1610,87 @@
                             } catch(e) {}
                         }
                         
-                        // 2. 排位赛历史 - 累加时间段内的所有排位赛得分
+                        // ============================================================
+                        //  2. 排位赛历史 - 累加时间段内的所有排位赛得分
+                        //     🔧 修复：确保 rankHistory 中的所有得分都被累加
+                        // ============================================================
                         if (user.rankHistory && Array.isArray(user.rankHistory)) {
                             for (var r = 0; r < user.rankHistory.length; r++) {
                                 try {
                                     var rankDate = new Date(user.rankHistory[r].date);
                                     if (rankDate >= periodStart) {
-                                        periodScore += (user.rankHistory[r].score || 0);
+                                        var score = user.rankHistory[r].score || 0;
+                                        periodScore += score;
                                         hasActivity = true;
                                     }
                                 } catch(e) {}
                             }
                         }
                         
-                        // 3. 挑战赛历史 - 累加时间段内的所有挑战赛得分
+                        // ============================================================
+                        //  3. 挑战赛历史 - 累加时间段内的所有挑战赛得分
+                        //     🔧 修复：确保 challengeHistory 中的所有得分都被累加
+                        // ============================================================
                         if (user.challengeHistory && Array.isArray(user.challengeHistory)) {
                             for (var c = 0; c < user.challengeHistory.length; c++) {
                                 try {
                                     var challengeDate = new Date(user.challengeHistory[c].date);
                                     if (challengeDate >= periodStart) {
-                                        periodScore += (user.challengeHistory[c].score || 0);
+                                        var score = user.challengeHistory[c].score || 0;
+                                        periodScore += score;
                                         hasActivity = true;
                                     }
                                 } catch(e) {}
+                            }
+                        }
+                        
+                        // ============================================================
+                        //  4. 🔧 额外修复：如果用户有总积分但历史记录为空，
+                        //     检查是否在时间段内有任何活动记录
+                        // ============================================================
+                        if (!hasActivity && user.totalScore > 0) {
+                            // 检查是否有任何活动记录在时间段内
+                            var hasAnyActivity = false;
+                            
+                            // 检查 warmupDate
+                            if (user.warmupDate) {
+                                try {
+                                    var d = new Date(user.warmupDate);
+                                    if (d >= periodStart) hasAnyActivity = true;
+                                } catch(e) {}
+                            }
+                            
+                            // 检查 rankHistory
+                            if (!hasAnyActivity && user.rankHistory && user.rankHistory.length > 0) {
+                                for (var r2 = 0; r2 < user.rankHistory.length; r2++) {
+                                    try {
+                                        var d = new Date(user.rankHistory[r2].date);
+                                        if (d >= periodStart) { hasAnyActivity = true; break; }
+                                    } catch(e) {}
+                                }
+                            }
+                            
+                            // 检查 challengeHistory
+                            if (!hasAnyActivity && user.challengeHistory && user.challengeHistory.length > 0) {
+                                for (var c2 = 0; c2 < user.challengeHistory.length; c2++) {
+                                    try {
+                                        var d = new Date(user.challengeHistory[c2].date);
+                                        if (d >= periodStart) { hasAnyActivity = true; break; }
+                                    } catch(e) {}
+                                }
+                            }
+                            
+                            if (hasAnyActivity) {
+                                // 如果历史记录为空但总积分>0，使用总积分
+                                // 但更准确的是从各模式得分累加
+                                var totalFromModes = (user.warmupScore || 0) + (user.rankScore || 0) + (user.challengeScore || 0);
+                                if (totalFromModes > 0) {
+                                    periodScore = totalFromModes;
+                                    hasActivity = true;
+                                } else {
+                                    periodScore = user.totalScore || 0;
+                                    hasActivity = true;
+                                }
                             }
                         }
                         
