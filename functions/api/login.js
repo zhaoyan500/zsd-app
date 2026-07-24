@@ -22,7 +22,7 @@ export async function onRequest(context) {
 
         const user = await db.prepare(`
             SELECT id, name, unit, pwd, warmup_score, rank_score, challenge_score, total_score,
-                   warmup_date, rank_remain, challenge_date, challenge_used, version, created_at
+                   warmup_date, challenge_date, challenge_used, version, created_at
             FROM users WHERE name = ?
         `).bind(name).first();
 
@@ -35,11 +35,25 @@ export async function onRequest(context) {
         }
 
         const today = new Date().toDateString();
-        const rankDaily = await db.prepare(`
+        
+        // 查询今日排位赛已用次数
+        let rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
         `).bind(user.id, today).first();
+        
+        // 如果没有记录，说明今天还没玩过，创建一条新记录
+        if (!rankDaily) {
+            await db.prepare(`
+                INSERT INTO rank_daily (user_id, date, used) VALUES (?, ?, 0)
+            `).bind(user.id, today).run();
+            rankDaily = { used: 0 };
+        }
+        
+        // 计算剩余次数
+        const used = rankDaily.used || 0;
+        user.rank_remain = Math.max(0, 3 - used);
+        user.rankDaily = { date: today, used: used };
 
-        user.rank_remain = rankDaily ? Math.max(0, 3 - rankDaily.used) : 3;
         delete user.pwd;
 
         return new Response(JSON.stringify({ success: true, user: user }), { headers });

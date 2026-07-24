@@ -35,7 +35,7 @@ export async function onRequest(context) {
 
         const user = await db.prepare(`
             SELECT id, name, unit, warmup_score, rank_score, challenge_score, total_score,
-                   warmup_date, rank_remain, challenge_date, challenge_used, version, created_at
+                   warmup_date, challenge_date, challenge_used, version, created_at
             FROM users WHERE id = ?
         `).bind(id).first();
 

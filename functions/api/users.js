@@ -20,11 +20,19 @@ export async function onRequest(context) {
         const today = new Date().toDateString();
 
         for (const user of results) {
-            const rankDaily = await db.prepare(`
+            // 查询今日排位赛已用次数
+            let rankDaily = await db.prepare(`
                 SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
             `).bind(user.id, today).first();
-            user.rank_remain = rankDaily ? Math.max(0, 3 - rankDaily.used) : 3;
-            user.rankDaily = rankDaily ? { date: today, used: rankDaily.used } : { date: today, used: 0 };
+            
+            // 如果没有记录，说明今天还没玩过
+            if (!rankDaily) {
+                rankDaily = { used: 0 };
+            }
+            
+            const used = rankDaily.used || 0;
+            user.rank_remain = Math.max(0, 3 - used);
+            user.rankDaily = { date: today, used: used };
         }
 
         return new Response(JSON.stringify(results), { headers });
