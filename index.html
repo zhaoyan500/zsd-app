@@ -601,6 +601,11 @@
                 }
                 var rawUser = result.user || result;
                 currentUser = normalizeUser(rawUser);
+                
+                // 修复：注册后初始化每日数据
+                checkDailyReset(currentUser);
+                updateTotalScore(currentUser);
+                
                 var modalText = document.getElementById('modalText');
                 modalText.innerText = unit === '神秘小分队' ? '欢迎实力超群的你加入挑战！' : '恭喜加入' + unit + '，让我们一起为荣誉而战！';
                 document.getElementById('welcomeModal').classList.remove('hidden');
@@ -631,6 +636,11 @@
                 }
                 var rawUser = result.user || result;
                 currentUser = normalizeUser(rawUser);
+                
+                // 修复：登录后立即检查每日重置
+                checkDailyReset(currentUser);
+                updateTotalScore(currentUser);
+                
                 showPage('mainPage');
                 updateMainUI();
                 hideLoading();
@@ -646,9 +656,25 @@
         // ============================================================
         async function saveUserToCloud(user) {
             try {
-                await apiCall('/save', 'POST', { name: user.name, userData: user });
+                var result = await apiCall('/save', 'POST', { name: user.name, userData: user });
+                
+                // 修复：保存成功后，从返回数据更新 currentUser
+                if (result && result.user) {
+                    var updated = normalizeUser(result.user);
+                    // 保留本地的一些运行时状态
+                    if (currentUser) {
+                        updated.rankDaily = currentUser.rankDaily || { date: '', used: 0 };
+                        updated.rankRemain = currentUser.rankRemain || 3;
+                    }
+                    currentUser = updated;
+                }
+                
+                // 修复：更新缓存
+                await updateUserCache();
+                return result;
             } catch (error) {
                 console.error('保存失败:', error);
+                throw error;
             }
         }
 
@@ -843,16 +869,26 @@
         // ============================================================
         //  用户数据管理
         // ============================================================
+        // 修复：checkDailyReset - 确保正确计算剩余次数
         function checkDailyReset(user) {
+            if (!user) return;
             var today = new Date().toDateString();
-            if (user.rankDaily && user.rankDaily.date !== today) {
+            
+            // 初始化 rankDaily（如果不存在）
+            if (!user.rankDaily) {
                 user.rankDaily = { date: today, used: 0 };
                 user.rankRemain = 3;
-            } else if (!user.rankDaily) {
+                return;
+            }
+            
+            // 如果日期不同，重置数据
+            if (user.rankDaily.date !== today) {
                 user.rankDaily = { date: today, used: 0 };
                 user.rankRemain = 3;
             } else {
-                user.rankRemain = Math.max(0, 3 - (user.rankDaily.used || 0));
+                // 同一天，计算剩余次数
+                var used = user.rankDaily.used || 0;
+                user.rankRemain = Math.max(0, 3 - used);
             }
         }
 
@@ -870,6 +906,7 @@
 
         function logoutUser() {
             currentUser = null;
+            setStorage('currentUser', null);
             showPage('loginPage');
         }
 
@@ -878,6 +915,11 @@
         // ============================================================
         function updateMainUI() {
             if (!currentUser) return;
+            
+            // 修复：每次更新主界面时重新检查每日重置
+            checkDailyReset(currentUser);
+            updateTotalScore(currentUser);
+            
             document.getElementById('mainUserName').textContent = currentUser.name;
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = currentUser.totalScore || 0;
@@ -885,12 +927,14 @@
             document.getElementById('mainRank').textContent = currentUser.rankScore || 0;
             document.getElementById('mainChallenge').textContent = currentUser.challengeScore || 0;
             document.getElementById('mainRankRemain').textContent = currentUser.rankRemain || 0;
+            
             var wStatus = currentUser.warmupScore ? '今日最高: ' + currentUser.warmupScore : '今日未玩';
             document.getElementById('warmupStatus').textContent = wStatus;
             document.getElementById('rankedStatus').textContent =
                 '今日剩余: ' + (currentUser.rankRemain || 0) + '次 | 最高: ' + (currentUser.rankScore || 0);
             document.getElementById('challengeStatus').textContent =
                 '今日已用: ' + (currentUser.challengeUsed || 0) + '/1 | 最高: ' + (currentUser.challengeScore || 0);
+            
             var cfg = getAdminConfig();
             var cards = document.querySelectorAll('.mode-card');
             var modes = ['warmup', 'ranked', 'challenge'];
@@ -904,6 +948,9 @@
                     cards[i].style.pointerEvents = 'auto';
                 }
             }
+            
+            // 保存当前用户到本地存储
+            setStorage('currentUser', currentUser);
         }
 
         // ============================================================
@@ -919,10 +966,16 @@
                 alert('⏳ 该赛制正在补充题库，暂未开放');
                 return;
             }
+            
+            // 修复：每次进入都重新检查每日重置
+            checkDailyReset(currentUser);
+            updateTotalScore(currentUser);
+            
             if (mode === 'ranked') {
-                checkDailyReset(currentUser);
                 if ((currentUser.rankRemain || 0) <= 0) {
                     alert('今日排位赛次数已用完，请明天再来！');
+                    // 修复：更新界面显示
+                    updateMainUI();
                     return;
                 }
             }
@@ -930,9 +983,11 @@
                 checkChallengeReset(currentUser);
                 if ((currentUser.challengeUsed || 0) >= 1) {
                     alert('今日挑战赛已参加，请明天再来！');
+                    updateMainUI();
                     return;
                 }
             }
+            
             currentMode = mode;
             quizQuestions = getQuiz(mode);
             var expected = { warmup: 10, ranked: 15, challenge: 20 };
@@ -1149,6 +1204,9 @@
             var today = new Date().toDateString();
             var mode = currentMode;
 
+            // 修复：先确保每日数据正确
+            checkDailyReset(currentUser);
+
             if (mode === 'warmup') {
                 if (currentUser.warmupDate !== today) {
                     currentUser.warmupDate = today;
@@ -1157,12 +1215,16 @@
                     currentUser.warmupScore = Math.max(currentUser.warmupScore || 0, userScore);
                 }
             } else if (mode === 'ranked') {
-                if (!currentUser.rankDaily) currentUser.rankDaily = { date: '', used: 0 };
+                // 修复：确保 rankDaily 存在
+                if (!currentUser.rankDaily) {
+                    currentUser.rankDaily = { date: today, used: 0 };
+                }
                 if (currentUser.rankDaily.date !== today) {
                     currentUser.rankDaily = { date: today, used: 1 };
                 } else {
                     currentUser.rankDaily.used = (currentUser.rankDaily.used || 0) + 1;
                 }
+                // 修复：重新计算剩余次数
                 currentUser.rankRemain = Math.max(0, 3 - currentUser.rankDaily.used);
                 currentUser.rankScore = Math.max(currentUser.rankScore || 0, userScore);
                 if (!currentUser.rankHistory) currentUser.rankHistory = [];
@@ -1176,8 +1238,16 @@
             }
 
             updateTotalScore(currentUser);
-            await saveUserToCloud(currentUser);
+            
+            // 保存到云端
+            try {
+                await saveUserToCloud(currentUser);
+            } catch (e) {
+                console.error('保存失败:', e);
+                // 即使保存失败，也继续显示结果
+            }
 
+            // 显示结果
             document.getElementById('resName').textContent = currentUser.name;
             document.getElementById('resUnit').textContent = currentUser.unit;
             document.getElementById('resMode').textContent = getModeIcon(mode) + ' ' + getModeLabel(mode);
@@ -1197,6 +1267,9 @@
             document.getElementById('resultTitle').textContent = titleMap[reason] || '🏁 结束';
 
             showPage('resultPage');
+            
+            // 修复：更新主界面显示
+            updateMainUI();
         }
 
         function quitQuiz() {
@@ -1229,9 +1302,92 @@
         }
 
         // ============================================================
-        //  排行榜（完全修复版）
+        //  排行榜（修复版）
         // ============================================================
-       /* function setRankFilter(type) {
+        
+        // 缓存的用户列表
+        var cachedUsers = [];
+        var cachedTeamRanking = [];
+
+        // 获取所有用户数据（增强错误处理）
+        async function fetchAllUsersWithRetry() {
+            try {
+                var response = await fetch(API_BASE + '/users');
+                if (!response.ok) {
+                    console.error('API响应错误:', response.status);
+                    return { users: [], teamRanking: [] };
+                }
+                var data = await response.json();
+                
+                // 处理不同的数据格式
+                var users = [];
+                var teamRanking = [];
+                
+                if (Array.isArray(data)) {
+                    users = data.map(normalizeUser);
+                } else if (data.users && Array.isArray(data.users)) {
+                    users = data.users.map(normalizeUser);
+                    teamRanking = data.teamRanking || [];
+                } else if (data.results && Array.isArray(data.results)) {
+                    users = data.results.map(normalizeUser);
+                } else {
+                    var keys = Object.keys(data);
+                    if (keys.length > 0 && data[keys[0]] && typeof data[keys[0]] === 'object') {
+                        for (var key in data) {
+                            if (Array.isArray(data[key])) {
+                                var normalized = data[key].map(normalizeUser);
+                                users = users.concat(normalized);
+                            }
+                        }
+                    }
+                }
+                
+                if (users.length === 0) {
+                    var localUsers = getStorage('localUsers', []);
+                    if (localUsers.length > 0) {
+                        users = localUsers.map(normalizeUser);
+                    }
+                }
+                
+                teamRanking = calculateTeamRanking(users);
+                
+                return { users: users, teamRanking: teamRanking };
+            } catch (error) {
+                console.error('获取用户数据失败:', error);
+                var localUsers = getStorage('localUsers', []);
+                if (localUsers.length > 0) {
+                    var users = localUsers.map(normalizeUser);
+                    var teamRanking = calculateTeamRanking(users);
+                    return { users: users, teamRanking: teamRanking };
+                }
+                return { users: [], teamRanking: [] };
+            }
+        }
+
+        // 计算战队排名
+        function calculateTeamRanking(users) {
+            var teamMap = {};
+            for (var i = 0; i < users.length; i++) {
+                var u = users[i];
+                var unit = u.unit || '未分配';
+                if (!teamMap[unit]) {
+                    teamMap[unit] = { unit: unit, totalScore: 0, memberCount: 0 };
+                }
+                teamMap[unit].totalScore += (u.totalScore || 0);
+                teamMap[unit].memberCount += 1;
+            }
+            var teamList = [];
+            for (var key in teamMap) {
+                teamList.push(teamMap[key]);
+            }
+            teamList.sort(function(a, b) {
+                return b.totalScore - a.totalScore;
+            });
+            return teamList;
+        }
+
+        // 设置排行榜过滤
+        function setRankFilter(type) {
             rankFilter = type;
             var tabs = document.querySelectorAll('.rank-tab');
             for (var i = 0; i < tabs.length; i++) {
@@ -1241,7 +1397,6 @@
             var teamTotal = document.getElementById('teamTotalRank');
             if (type === 'unit') {
                 sel.classList.remove('hidden');
-                // 填充战队列表
                 populateTeamSelector();
                 teamTotal.classList.add('hidden');
             } else {
@@ -1255,23 +1410,25 @@
             renderRank();
         }
 
+        // 填充战队选择器
         function populateTeamSelector() {
-            var list = cachedUsers;
+            var select = document.getElementById('selectedTeam');
+            var currentValue = select.value;
+            select.innerHTML = '';
+            
             var teams = [];
             var teamSet = {};
-
-            // 从缓存用户中提取战队
-            if (list && list.length > 0) {
-                for (var i = 0; i < list.length; i++) {
-                    var t = list[i].unit;
+            
+            if (cachedUsers && cachedUsers.length > 0) {
+                for (var i = 0; i < cachedUsers.length; i++) {
+                    var t = cachedUsers[i].unit;
                     if (t && !teamSet[t]) {
                         teamSet[t] = true;
                         teams.push(t);
                     }
                 }
             }
-
-            // 如果缓存为空，使用默认战队列表
+            
             if (teams.length === 0) {
                 var defaultTeams = ['400战队', '055战队', '114战队', '343战队', '霞光战队', '神秘小分队'];
                 for (var j = 0; j < defaultTeams.length; j++) {
@@ -1281,21 +1438,41 @@
                     }
                 }
             }
-
-            var select = document.getElementById('selectedTeam');
-            select.innerHTML = '';
+            
+            teams.sort();
+            
             if (teams.length === 0) {
                 select.innerHTML = '<option value="">暂无战队</option>';
             } else {
+                var defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = '请选择战队';
+                select.appendChild(defaultOption);
+                
                 for (var k = 0; k < teams.length; k++) {
                     var opt = document.createElement('option');
                     opt.value = teams[k];
-                    opt.textContent = teams[k];
+                    opt.textContent = teams[k] + ' (' + countTeamMembers(teams[k]) + '人)';
                     select.appendChild(opt);
                 }
             }
+            
+            if (currentValue) {
+                select.value = currentValue;
+            }
         }
 
+        // 统计战队人数
+        function countTeamMembers(unit) {
+            if (!cachedUsers) return 0;
+            var count = 0;
+            for (var i = 0; i < cachedUsers.length; i++) {
+                if (cachedUsers[i].unit === unit) count++;
+            }
+            return count;
+        }
+
+        // 渲染排行榜（完全修复版）
         async function renderRank() {
             var rankBox = document.getElementById('rankList');
             var teamTotalBox = document.getElementById('teamTotalList');
@@ -1304,46 +1481,58 @@
             showLoading();
 
             try {
-                // 获取数据
-                var response = await fetch(API_BASE + '/users');
-                var data = await response.json();
+                var result = await fetchAllUsersWithRetry();
+                var list = result.users;
+                var teamRanking = result.teamRanking;
                 
-                var list = data.users || data;
-                var teamRanking = data.teamRanking || [];
-
-                // 缓存数据，供 populateTeamSelector 使用
                 cachedUsers = list;
+                cachedTeamRanking = teamRanking;
+                
+                if (list.length > 0) {
+                    setStorage('localUsers', list);
+                }
 
                 if (rankFilter === 'total') {
-                    // ===== 个人总积分排行 =====
-                    var sorted = list.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); });
+                    var sorted = list.slice().sort(function(a, b) { 
+                        return (b.totalScore || 0) - (a.totalScore || 0); 
+                    });
+                    
                     var html = '<div class="rank-section-title">🏆 个人总积分排行</div>';
                     if (sorted.length === 0) {
-                        html += '<p class="text-center text-gray-400 py-4">暂无用户数据</p>';
+                        html += '<p class="text-center text-gray-400 py-4">暂无用户数据，快去注册答题吧！</p>';
                     } else {
-                        for (var i = 0; i < sorted.length; i++) {
+                        for (var i = 0; i < sorted.length && i < 50; i++) {
                             var u = sorted[i];
                             var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
-                            html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
-                                '<div><span class="font-bold text-primary">' + medal + '</span><span class="ml-2">' + u
-                                .name + '</span><span class="text-gray-400 text-xs ml-1">(' + u.unit + ')</span></div>' +
+                            var isCurrentUser = currentUser && u.name === currentUser.name;
+                            html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
+                                    (isCurrentUser ? ' border-2 border-primary' : '') + '">' +
+                                '<div><span class="font-bold text-primary">' + medal + '</span>' +
+                                '<span class="ml-2 font-medium">' + u.name + '</span>' +
+                                '<span class="text-gray-400 text-xs ml-1">(' + (u.unit || '未分配') + ')</span>' +
+                                (isCurrentUser ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
+                                '</div>' +
                                 '<span class="font-bold text-success">' + (u.totalScore || 0) + '分</span>' +
                                 '</div>';
                         }
                     }
                     rankBox.innerHTML = html;
 
-                    // ===== 战队总积分排行 =====
                     var teamHtml = '<div class="rank-section-title">🏢 战队总积分排行</div>';
                     if (teamRanking.length === 0) {
                         teamHtml += '<p class="text-center text-gray-400 py-2">暂无战队数据</p>';
                     } else {
-                        for (var m = 0; m < teamRanking.length; m++) {
+                        for (var m = 0; m < teamRanking.length && m < 20; m++) {
                             var team = teamRanking[m];
                             var medal2 = m === 0 ? '🥇' : m === 1 ? '🥈' : m === 2 ? '🥉' : (m + 1);
-                            teamHtml += '<div class="flex justify-between items-center p-2 bg-grayLight rounded-lg">' +
-                                '<div><span class="font-bold text-primary">' + medal2 + '</span><span class="ml-2">' +
-                                team.unit + '</span><span class="text-gray-400 text-xs ml-1">(' + team.memberCount + '人)</span></div>' +
+                            var isMyTeam = currentUser && team.unit === currentUser.unit;
+                            teamHtml += '<div class="flex justify-between items-center p-2 bg-grayLight rounded-lg' + 
+                                        (isMyTeam ? ' border-2 border-primary' : '') + '">' +
+                                '<div><span class="font-bold text-primary">' + medal2 + '</span>' +
+                                '<span class="ml-2 font-medium">' + team.unit + '</span>' +
+                                '<span class="text-gray-400 text-xs ml-1">(' + team.memberCount + '人)</span>' +
+                                (isMyTeam ? '<span class="ml-2 text-primary text-xs">👈 你的战队</span>' : '') +
+                                '</div>' +
                                 '<span class="font-bold text-success">' + team.totalScore + '分</span>' +
                                 '</div>';
                         }
@@ -1352,30 +1541,32 @@
                     teamTotalRank.classList.remove('hidden');
 
                 } else if (rankFilter === 'unit') {
-                    // ===== 战队内部成员排行 =====
                     teamTotalRank.classList.add('hidden');
                     
-                    // 确保战队选择器有数据
                     populateTeamSelector();
                     
                     var select = document.getElementById('selectedTeam');
                     var team = select.value;
+                    
                     if (!team || team === '') {
-                        rankBox.innerHTML = '<div class="text-center text-gray-400 py-4">请选择战队查看内部排行</div>';
+                        rankBox.innerHTML = '<div class="text-center text-gray-400 py-4">👆 请选择战队查看内部排行</div>';
                         hideLoading();
                         return;
                     }
 
-                    // 从数据中筛选该战队成员
-                    var members = list.filter(function(u) { return u.unit === team; });
+                    var members = list.filter(function(u) { 
+                        return u.unit === team; 
+                    });
                     
-                    // 计算战队总积分
                     var teamTotal = 0;
                     for (var n = 0; n < members.length; n++) {
                         teamTotal += (members[n].totalScore || 0);
                     }
 
-                    var sorted2 = members.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); });
+                    var sorted2 = members.slice().sort(function(a, b) { 
+                        return (b.totalScore || 0) - (a.totalScore || 0); 
+                    });
+                    
                     var html2 = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>' +
                         '<div class="text-sm text-gray-500 mb-3">战队总积分：<b class="text-primary">' + 
                         teamTotal + '分</b> | 成员：' + members.length + '人</div>';
@@ -1386,9 +1577,13 @@
                         for (var p = 0; p < sorted2.length; p++) {
                             var u2 = sorted2[p];
                             var medal3 = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
-                            html2 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
-                                '<div><span class="font-bold text-primary">' + medal3 + '</span><span class="ml-2">' +
-                                u2.name + '</span></div>' +
+                            var isMe = currentUser && u2.name === currentUser.name;
+                            html2 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
+                                    (isMe ? ' border-2 border-primary' : '') + '">' +
+                                '<div><span class="font-bold text-primary">' + medal3 + '</span>' +
+                                '<span class="ml-2 font-medium">' + u2.name + '</span>' +
+                                (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
+                                '</div>' +
                                 '<span class="font-bold text-success">' + (u2.totalScore || 0) + '分</span>' +
                                 '</div>';
                         }
@@ -1396,32 +1591,61 @@
                     rankBox.innerHTML = html2;
 
                 } else {
-                    // ===== 月榜/周榜 =====
                     teamTotalRank.classList.add('hidden');
                     
                     var now = new Date();
                     var isMonth = rankFilter === 'month';
-                    var periodStart = isMonth ?
-                        new Date(now.getFullYear(), now.getMonth(), 1) :
-                        (function() { var d = new Date(now);
-                            d.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)); return d; })();
-                    var periodEnd = isMonth ?
-                        new Date(now.getFullYear(), now.getMonth() + 1, 0) :
-                        now;
+                    var periodStart;
+                    if (isMonth) {
+                        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                    } else {
+                        var day = now.getDay();
+                        var diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                        periodStart = new Date(now.getFullYear(), now.getMonth(), diff);
+                        periodStart.setHours(0, 0, 0, 0);
+                    }
+                    
                     var filtered = list.filter(function(u) {
-                        var checkDate = function(dateStr) {
-                            if (!dateStr) return false;
-                            try { var d = new Date(dateStr); return d >= periodStart && d <= periodEnd; } catch (
-                            e) { return false; }
-                        };
-                        if (checkDate(u.warmupDate)) return true;
-                        if (u.rankHistory && u.rankHistory.some(function(h) { return checkDate(h.date); })) return true;
-                        if (u.challengeHistory && u.challengeHistory.some(function(h) { return checkDate(h.date); }))
-                            return true;
-                        return false;
+                        var totalScore = 0;
+                        if (u.warmupDate) {
+                            try {
+                                var d = new Date(u.warmupDate);
+                                if (d >= periodStart) {
+                                    totalScore += (u.warmupScore || 0);
+                                }
+                            } catch(e) {}
+                        }
+                        if (u.rankHistory && Array.isArray(u.rankHistory)) {
+                            for (var r = 0; r < u.rankHistory.length; r++) {
+                                try {
+                                    var d = new Date(u.rankHistory[r].date);
+                                    if (d >= periodStart) {
+                                        totalScore += (u.rankHistory[r].score || 0);
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                        if (u.challengeHistory && Array.isArray(u.challengeHistory)) {
+                            for (var c = 0; c < u.challengeHistory.length; c++) {
+                                try {
+                                    var d = new Date(u.challengeHistory[c].date);
+                                    if (d >= periodStart) {
+                                        totalScore += (u.challengeHistory[c].score || 0);
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                        if (totalScore === 0) {
+                            return false;
+                        }
+                        u._periodScore = totalScore;
+                        return true;
                     });
-                    var sorted3 = filtered.slice().sort(function(a, b) { return (b.totalScore || 0) - (a.totalScore || 0); })
-                        .slice(0, 10);
+                    
+                    var sorted3 = filtered.slice().sort(function(a, b) { 
+                        return (b._periodScore || 0) - (a._periodScore || 0); 
+                    }).slice(0, 10);
+                    
                     var html3 = '<div class="rank-section-title">' + (isMonth ? '📅 月榜（本月前10）' :
                         '📅 周榜（本周前10）') + '</div>';
                     if (sorted3.length === 0) {
@@ -1430,11 +1654,15 @@
                         for (var q = 0; q < sorted3.length; q++) {
                             var u3 = sorted3[q];
                             var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
-                            html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg">' +
-                                '<div><span class="font-bold text-primary">' + medal4 + '</span><span class="ml-2">' +
-                                u3.name + '</span><span class="text-gray-400 text-xs ml-1">(' + u3.unit +
-                                ')</span></div>' +
-                                '<span class="font-bold text-success">' + (u3.totalScore || 0) + '分</span>' +
+                            var isMe = currentUser && u3.name === currentUser.name;
+                            html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
+                                    (isMe ? ' border-2 border-primary' : '') + '">' +
+                                '<div><span class="font-bold text-primary">' + medal4 + '</span>' +
+                                '<span class="ml-2 font-medium">' + u3.name + '</span>' +
+                                '<span class="text-gray-400 text-xs ml-1">(' + (u3.unit || '未分配') + ')</span>' +
+                                (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
+                                '</div>' +
+                                '<span class="font-bold text-success">' + (u3._periodScore || 0) + '分</span>' +
                                 '</div>';
                         }
                     }
@@ -1443,445 +1671,25 @@
                 hideLoading();
             } catch (error) {
                 console.error('加载排行榜失败:', error);
-                rankBox.innerHTML = '<p class="text-center text-red-500 py-4">加载失败，请刷新重试</p>';
+                rankBox.innerHTML = '<p class="text-center text-red-500 py-4">❌ 加载失败，请刷新重试<br><span class="text-xs text-gray-400">' + 
+                                   (error.message || '未知错误') + '</span></p>';
                 hideLoading();
             }
-        }*/
-        
-    // ============================================================
-    //  排行榜（修复版）
-    // ============================================================
-    
-    // 缓存的用户列表
-    var cachedUsers = [];
-    var cachedTeamRanking = [];
+        }
 
-    // 获取所有用户数据（增强错误处理）
-    async function fetchAllUsersWithRetry() {
-        try {
-            var response = await fetch(API_BASE + '/users');
-            if (!response.ok) {
-                console.error('API响应错误:', response.status);
-                return { users: [], teamRanking: [] };
-            }
-            var data = await response.json();
-            
-            // 处理不同的数据格式
-            var users = [];
-            var teamRanking = [];
-            
-            if (Array.isArray(data)) {
-                // 如果返回的是数组
-                users = data.map(normalizeUser);
-            } else if (data.users && Array.isArray(data.users)) {
-                // 如果返回的是 { users: [], teamRanking: [] }
-                users = data.users.map(normalizeUser);
-                teamRanking = data.teamRanking || [];
-            } else if (data.results && Array.isArray(data.results)) {
-                // 如果返回的是 { results: [] }
-                users = data.results.map(normalizeUser);
-            } else {
-                // 尝试从对象中提取用户数据
-                var keys = Object.keys(data);
-                if (keys.length > 0 && data[keys[0]] && typeof data[keys[0]] === 'object') {
-                    // 可能是按战队分组的数据
-                    for (var key in data) {
-                        if (Array.isArray(data[key])) {
-                            var normalized = data[key].map(normalizeUser);
-                            users = users.concat(normalized);
-                        }
-                    }
+        // 新增：更新用户缓存
+        async function updateUserCache() {
+            try {
+                var result = await fetchAllUsersWithRetry();
+                cachedUsers = result.users;
+                cachedTeamRanking = result.teamRanking;
+                if (cachedUsers.length > 0) {
+                    setStorage('localUsers', cachedUsers);
                 }
-            }
-            
-            // 如果没有用户数据，尝试从 localStorage 恢复
-            if (users.length === 0) {
-                var localUsers = getStorage('localUsers', []);
-                if (localUsers.length > 0) {
-                    users = localUsers.map(normalizeUser);
-                }
-            }
-            
-            // 计算战队排名
-            teamRanking = calculateTeamRanking(users);
-            
-            return { users: users, teamRanking: teamRanking };
-        } catch (error) {
-            console.error('获取用户数据失败:', error);
-            // 尝试从本地缓存恢复
-            var localUsers = getStorage('localUsers', []);
-            if (localUsers.length > 0) {
-                var users = localUsers.map(normalizeUser);
-                var teamRanking = calculateTeamRanking(users);
-                return { users: users, teamRanking: teamRanking };
-            }
-            return { users: [], teamRanking: [] };
-        }
-    }
-
-    // 计算战队排名
-    function calculateTeamRanking(users) {
-        var teamMap = {};
-        for (var i = 0; i < users.length; i++) {
-            var u = users[i];
-            var unit = u.unit || '未分配';
-            if (!teamMap[unit]) {
-                teamMap[unit] = { unit: unit, totalScore: 0, memberCount: 0 };
-            }
-            teamMap[unit].totalScore += (u.totalScore || 0);
-            teamMap[unit].memberCount += 1;
-        }
-        var teamList = [];
-        for (var key in teamMap) {
-            teamList.push(teamMap[key]);
-        }
-        teamList.sort(function(a, b) {
-            return b.totalScore - a.totalScore;
-        });
-        return teamList;
-    }
-
-    // 设置排行榜过滤
-    function setRankFilter(type) {
-        rankFilter = type;
-        var tabs = document.querySelectorAll('.rank-tab');
-        for (var i = 0; i < tabs.length; i++) {
-            tabs[i].classList.toggle('active', tabs[i].dataset.rank === type);
-        }
-        var sel = document.getElementById('teamSelector');
-        var teamTotal = document.getElementById('teamTotalRank');
-        if (type === 'unit') {
-            sel.classList.remove('hidden');
-            populateTeamSelector();
-            teamTotal.classList.add('hidden');
-        } else {
-            sel.classList.add('hidden');
-            if (type === 'total') {
-                teamTotal.classList.remove('hidden');
-            } else {
-                teamTotal.classList.add('hidden');
+            } catch(e) {
+                console.error('更新缓存失败:', e);
             }
         }
-        renderRank();
-    }
-
-    // 填充战队选择器
-    function populateTeamSelector() {
-        var select = document.getElementById('selectedTeam');
-        var currentValue = select.value;
-        select.innerHTML = '';
-        
-        // 从缓存中提取战队
-        var teams = [];
-        var teamSet = {};
-        
-        if (cachedUsers && cachedUsers.length > 0) {
-            for (var i = 0; i < cachedUsers.length; i++) {
-                var t = cachedUsers[i].unit;
-                if (t && !teamSet[t]) {
-                    teamSet[t] = true;
-                    teams.push(t);
-                }
-            }
-        }
-        
-        // 如果没有战队，添加默认战队
-        if (teams.length === 0) {
-            var defaultTeams = ['400战队', '055战队', '114战队', '343战队', '霞光战队', '神秘小分队'];
-            for (var j = 0; j < defaultTeams.length; j++) {
-                if (!teamSet[defaultTeams[j]]) {
-                    teamSet[defaultTeams[j]] = true;
-                    teams.push(defaultTeams[j]);
-                }
-            }
-        }
-        
-        // 按字母排序
-        teams.sort();
-        
-        if (teams.length === 0) {
-            select.innerHTML = '<option value="">暂无战队</option>';
-        } else {
-            var defaultOption = document.createElement('option');
-            defaultOption.value = '';
-            defaultOption.textContent = '请选择战队';
-            select.appendChild(defaultOption);
-            
-            for (var k = 0; k < teams.length; k++) {
-                var opt = document.createElement('option');
-                opt.value = teams[k];
-                opt.textContent = teams[k] + ' (' + countTeamMembers(teams[k]) + '人)';
-                select.appendChild(opt);
-            }
-        }
-        
-        // 恢复之前的选择
-        if (currentValue) {
-            select.value = currentValue;
-        }
-    }
-
-    // 统计战队人数
-    function countTeamMembers(unit) {
-        if (!cachedUsers) return 0;
-        var count = 0;
-        for (var i = 0; i < cachedUsers.length; i++) {
-            if (cachedUsers[i].unit === unit) count++;
-        }
-        return count;
-    }
-
-    // 渲染排行榜（完全修复版）
-    async function renderRank() {
-        var rankBox = document.getElementById('rankList');
-        var teamTotalBox = document.getElementById('teamTotalList');
-        var teamTotalRank = document.getElementById('teamTotalRank');
-
-        showLoading();
-
-        try {
-            // 获取数据
-            var result = await fetchAllUsersWithRetry();
-            var list = result.users;
-            var teamRanking = result.teamRanking;
-            
-            // 更新缓存
-            cachedUsers = list;
-            cachedTeamRanking = teamRanking;
-            
-            // 保存到本地缓存
-            if (list.length > 0) {
-                setStorage('localUsers', list);
-            }
-
-            if (rankFilter === 'total') {
-                // ===== 个人总积分排行 =====
-                var sorted = list.slice().sort(function(a, b) { 
-                    return (b.totalScore || 0) - (a.totalScore || 0); 
-                });
-                
-                var html = '<div class="rank-section-title">🏆 个人总积分排行</div>';
-                if (sorted.length === 0) {
-                    html += '<p class="text-center text-gray-400 py-4">暂无用户数据，快去注册答题吧！</p>';
-                } else {
-                    for (var i = 0; i < sorted.length && i < 50; i++) {
-                        var u = sorted[i];
-                        var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
-                        var isCurrentUser = currentUser && u.name === currentUser.name;
-                        html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
-                                (isCurrentUser ? ' border-2 border-primary' : '') + '">' +
-                            '<div><span class="font-bold text-primary">' + medal + '</span>' +
-                            '<span class="ml-2 font-medium">' + u.name + '</span>' +
-                            '<span class="text-gray-400 text-xs ml-1">(' + (u.unit || '未分配') + ')</span>' +
-                            (isCurrentUser ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
-                            '</div>' +
-                            '<span class="font-bold text-success">' + (u.totalScore || 0) + '分</span>' +
-                            '</div>';
-                    }
-                }
-                rankBox.innerHTML = html;
-
-                // ===== 战队总积分排行 =====
-                var teamHtml = '<div class="rank-section-title">🏢 战队总积分排行</div>';
-                if (teamRanking.length === 0) {
-                    teamHtml += '<p class="text-center text-gray-400 py-2">暂无战队数据</p>';
-                } else {
-                    for (var m = 0; m < teamRanking.length && m < 20; m++) {
-                        var team = teamRanking[m];
-                        var medal2 = m === 0 ? '🥇' : m === 1 ? '🥈' : m === 2 ? '🥉' : (m + 1);
-                        var isMyTeam = currentUser && team.unit === currentUser.unit;
-                        teamHtml += '<div class="flex justify-between items-center p-2 bg-grayLight rounded-lg' + 
-                                    (isMyTeam ? ' border-2 border-primary' : '') + '">' +
-                            '<div><span class="font-bold text-primary">' + medal2 + '</span>' +
-                            '<span class="ml-2 font-medium">' + team.unit + '</span>' +
-                            '<span class="text-gray-400 text-xs ml-1">(' + team.memberCount + '人)</span>' +
-                            (isMyTeam ? '<span class="ml-2 text-primary text-xs">👈 你的战队</span>' : '') +
-                            '</div>' +
-                            '<span class="font-bold text-success">' + team.totalScore + '分</span>' +
-                            '</div>';
-                    }
-                }
-                teamTotalBox.innerHTML = teamHtml;
-                teamTotalRank.classList.remove('hidden');
-
-            } else if (rankFilter === 'unit') {
-                // ===== 战队内部成员排行 =====
-                teamTotalRank.classList.add('hidden');
-                
-                populateTeamSelector();
-                
-                var select = document.getElementById('selectedTeam');
-                var team = select.value;
-                
-                if (!team || team === '') {
-                    rankBox.innerHTML = '<div class="text-center text-gray-400 py-4">👆 请选择战队查看内部排行</div>';
-                    hideLoading();
-                    return;
-                }
-
-                // 筛选该战队成员
-                var members = list.filter(function(u) { 
-                    return u.unit === team; 
-                });
-                
-                // 计算战队总积分
-                var teamTotal = 0;
-                for (var n = 0; n < members.length; n++) {
-                    teamTotal += (members[n].totalScore || 0);
-                }
-
-                var sorted2 = members.slice().sort(function(a, b) { 
-                    return (b.totalScore || 0) - (a.totalScore || 0); 
-                });
-                
-                var html2 = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>' +
-                    '<div class="text-sm text-gray-500 mb-3">战队总积分：<b class="text-primary">' + 
-                    teamTotal + '分</b> | 成员：' + members.length + '人</div>';
-
-                if (sorted2.length === 0) {
-                    html2 += '<p class="text-center text-gray-400 py-4">该战队暂无成员</p>';
-                } else {
-                    for (var p = 0; p < sorted2.length; p++) {
-                        var u2 = sorted2[p];
-                        var medal3 = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
-                        var isMe = currentUser && u2.name === currentUser.name;
-                        html2 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
-                                (isMe ? ' border-2 border-primary' : '') + '">' +
-                            '<div><span class="font-bold text-primary">' + medal3 + '</span>' +
-                            '<span class="ml-2 font-medium">' + u2.name + '</span>' +
-                            (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
-                            '</div>' +
-                            '<span class="font-bold text-success">' + (u2.totalScore || 0) + '分</span>' +
-                            '</div>';
-                    }
-                }
-                rankBox.innerHTML = html2;
-
-            } else {
-                // ===== 月榜/周榜 =====
-                teamTotalRank.classList.add('hidden');
-                
-                var now = new Date();
-                var isMonth = rankFilter === 'month';
-                var periodStart;
-                if (isMonth) {
-                    periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                } else {
-                    // 本周一
-                    var day = now.getDay();
-                    var diff = now.getDate() - day + (day === 0 ? -6 : 1);
-                    periodStart = new Date(now.getFullYear(), now.getMonth(), diff);
-                    periodStart.setHours(0, 0, 0, 0);
-                }
-                
-                var filtered = list.filter(function(u) {
-                    var totalScore = 0;
-                    // 检查热身赛
-                    if (u.warmupDate) {
-                        try {
-                            var d = new Date(u.warmupDate);
-                            if (d >= periodStart) {
-                                totalScore += (u.warmupScore || 0);
-                            }
-                        } catch(e) {}
-                    }
-                    // 检查排位赛历史
-                    if (u.rankHistory && Array.isArray(u.rankHistory)) {
-                        for (var r = 0; r < u.rankHistory.length; r++) {
-                            try {
-                                var d = new Date(u.rankHistory[r].date);
-                                if (d >= periodStart) {
-                                    totalScore += (u.rankHistory[r].score || 0);
-                                }
-                            } catch(e) {}
-                        }
-                    }
-                    // 检查挑战赛历史
-                    if (u.challengeHistory && Array.isArray(u.challengeHistory)) {
-                        for (var c = 0; c < u.challengeHistory.length; c++) {
-                            try {
-                                var d = new Date(u.challengeHistory[c].date);
-                                if (d >= periodStart) {
-                                    totalScore += (u.challengeHistory[c].score || 0);
-                                }
-                            } catch(e) {}
-                        }
-                    }
-                    // 如果总分为0，检查是否有其他得分
-                    if (totalScore === 0) {
-                        // 检查本周是否有任何活动
-                        return false;
-                    }
-                    u._periodScore = totalScore;
-                    return true;
-                });
-                
-                var sorted3 = filtered.slice().sort(function(a, b) { 
-                    return (b._periodScore || 0) - (a._periodScore || 0); 
-                }).slice(0, 10);
-                
-                var html3 = '<div class="rank-section-title">' + (isMonth ? '📅 月榜（本月前10）' :
-                    '📅 周榜（本周前10）') + '</div>';
-                if (sorted3.length === 0) {
-                    html3 += '<p class="text-center text-gray-400 py-4">本月/本周暂无活跃用户</p>';
-                } else {
-                    for (var q = 0; q < sorted3.length; q++) {
-                        var u3 = sorted3[q];
-                        var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
-                        var isMe = currentUser && u3.name === currentUser.name;
-                        html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
-                                (isMe ? ' border-2 border-primary' : '') + '">' +
-                            '<div><span class="font-bold text-primary">' + medal4 + '</span>' +
-                            '<span class="ml-2 font-medium">' + u3.name + '</span>' +
-                            '<span class="text-gray-400 text-xs ml-1">(' + (u3.unit || '未分配') + ')</span>' +
-                            (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
-                            '</div>' +
-                            '<span class="font-bold text-success">' + (u3._periodScore || 0) + '分</span>' +
-                            '</div>';
-                    }
-                }
-                rankBox.innerHTML = html3;
-            }
-            hideLoading();
-        } catch (error) {
-            console.error('加载排行榜失败:', error);
-            rankBox.innerHTML = '<p class="text-center text-red-500 py-4">❌ 加载失败，请刷新重试<br><span class="text-xs text-gray-400">' + 
-                               (error.message || '未知错误') + '</span></p>';
-            hideLoading();
-        }
-    }
-
-    // 在用户登录/注册后更新缓存
-    async function updateUserCache() {
-        try {
-            var result = await fetchAllUsersWithRetry();
-            cachedUsers = result.users;
-            cachedTeamRanking = result.teamRanking;
-            if (cachedUsers.length > 0) {
-                setStorage('localUsers', cachedUsers);
-            }
-        } catch(e) {
-            console.error('更新缓存失败:', e);
-        }
-    }
-
-    // 修改 userRegister 和 userLogin 成功后调用 updateUserCache
-    // 在 userRegister 函数末尾添加：
-    // await updateUserCache();
-    // 在 userLogin 函数末尾添加：
-    // await updateUserCache();
-
-    // 修复 saveUserToCloud 成功后更新缓存
-    async function saveUserToCloudWithCache(user) {
-        try {
-            await apiCall('/save', 'POST', { name: user.name, userData: user });
-            // 更新缓存
-            await updateUserCache();
-        } catch (error) {
-            console.error('保存失败:', error);
-        }
-    }
-                            
 
         // ============================================================
         //  管理员后台
@@ -1997,6 +1805,21 @@
             document.getElementById('registerPage').classList.add('active');
 
             document.getElementById('modalConfirmBtn').addEventListener('click', closeModal);
+
+            // 修复：如果 localStorage 中有用户信息，恢复登录状态
+            var savedUser = getStorage('currentUser', null);
+            if (savedUser) {
+                try {
+                    currentUser = normalizeUser(savedUser);
+                    // 恢复时检查每日重置
+                    checkDailyReset(currentUser);
+                    updateTotalScore(currentUser);
+                    showPage('mainPage');
+                    updateMainUI();
+                } catch (e) {
+                    console.error('恢复用户失败:', e);
+                }
+            }
 
             // 预加载用户数据
             fetchAllUsers().then(function(list) {
