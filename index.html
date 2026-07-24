@@ -1590,83 +1590,134 @@
                     }
                     rankBox.innerHTML = html2;
 
-                } else {
-                    teamTotalRank.classList.add('hidden');
-                    
-                    var now = new Date();
-                    var isMonth = rankFilter === 'month';
-                    var periodStart;
-                    if (isMonth) {
-                        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                    } else {
-                        var day = now.getDay();
-                        var diff = now.getDate() - day + (day === 0 ? -6 : 1);
-                        periodStart = new Date(now.getFullYear(), now.getMonth(), diff);
-                        periodStart.setHours(0, 0, 0, 0);
+               // ============================================================
+//  修复：renderRank 中月榜/周榜逻辑
+// ============================================================
+
+// 在 renderRank 函数中，找到 else 分支（月榜/周榜部分），替换为以下代码：
+
+} else {
+    // ===== 月榜/周榜 =====
+    teamTotalRank.classList.add('hidden');
+    
+    var now = new Date();
+    var isMonth = rankFilter === 'month';
+    var periodStart;
+    if (isMonth) {
+        // 月初
+        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+        // 本周一（周一为一周开始）
+        var day = now.getDay();
+        var diff = now.getDate() - day + (day === 0 ? -6 : 1);
+        periodStart = new Date(now.getFullYear(), now.getMonth(), diff);
+        periodStart.setHours(0, 0, 0, 0);
+    }
+    
+    // 计算每个用户在时间段内的总得分
+    var filtered = list.map(function(u) {
+        var periodScore = 0;
+        
+        // 1. 热身赛得分（warmupScore 是最高分，如果日期在时间段内则计入）
+        if (u.warmupDate) {
+            try {
+                var warmupDate = new Date(u.warmupDate);
+                if (warmupDate >= periodStart) {
+                    periodScore += (u.warmupScore || 0);
+                }
+            } catch(e) {}
+        }
+        
+        // 2. 排位赛历史得分
+        if (u.rankHistory && Array.isArray(u.rankHistory)) {
+            for (var r = 0; r < u.rankHistory.length; r++) {
+                try {
+                    var rankDate = new Date(u.rankHistory[r].date);
+                    if (rankDate >= periodStart) {
+                        periodScore += (u.rankHistory[r].score || 0);
                     }
-                    
-                    var filtered = list.filter(function(u) {
-                        var totalScore = 0;
-                        if (u.warmupDate) {
-                            try {
-                                var d = new Date(u.warmupDate);
-                                if (d >= periodStart) {
-                                    totalScore += (u.warmupScore || 0);
-                                }
-                            } catch(e) {}
-                        }
-                        if (u.rankHistory && Array.isArray(u.rankHistory)) {
-                            for (var r = 0; r < u.rankHistory.length; r++) {
-                                try {
-                                    var d = new Date(u.rankHistory[r].date);
-                                    if (d >= periodStart) {
-                                        totalScore += (u.rankHistory[r].score || 0);
-                                    }
-                                } catch(e) {}
-                            }
-                        }
-                        if (u.challengeHistory && Array.isArray(u.challengeHistory)) {
-                            for (var c = 0; c < u.challengeHistory.length; c++) {
-                                try {
-                                    var d = new Date(u.challengeHistory[c].date);
-                                    if (d >= periodStart) {
-                                        totalScore += (u.challengeHistory[c].score || 0);
-                                    }
-                                } catch(e) {}
-                            }
-                        }
-                        if (totalScore === 0) {
-                            return false;
-                        }
-                        u._periodScore = totalScore;
-                        return true;
-                    });
-                    
-                    var sorted3 = filtered.slice().sort(function(a, b) { 
-                        return (b._periodScore || 0) - (a._periodScore || 0); 
-                    }).slice(0, 10);
-                    
-                    var html3 = '<div class="rank-section-title">' + (isMonth ? '📅 月榜（本月前10）' :
-                        '📅 周榜（本周前10）') + '</div>';
-                    if (sorted3.length === 0) {
-                        html3 += '<p class="text-center text-gray-400 py-4">本月/本周暂无活跃用户</p>';
-                    } else {
-                        for (var q = 0; q < sorted3.length; q++) {
-                            var u3 = sorted3[q];
-                            var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
-                            var isMe = currentUser && u3.name === currentUser.name;
-                            html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
-                                    (isMe ? ' border-2 border-primary' : '') + '">' +
-                                '<div><span class="font-bold text-primary">' + medal4 + '</span>' +
-                                '<span class="ml-2 font-medium">' + u3.name + '</span>' +
-                                '<span class="text-gray-400 text-xs ml-1">(' + (u3.unit || '未分配') + ')</span>' +
-                                (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
-                                '</div>' +
-                                '<span class="font-bold text-success">' + (u3._periodScore || 0) + '分</span>' +
-                                '</div>';
-                        }
+                } catch(e) {}
+            }
+        }
+        
+        // 3. 挑战赛历史得分
+        if (u.challengeHistory && Array.isArray(u.challengeHistory)) {
+            for (var c = 0; c < u.challengeHistory.length; c++) {
+                try {
+                    var challengeDate = new Date(u.challengeHistory[c].date);
+                    if (challengeDate >= periodStart) {
+                        periodScore += (u.challengeHistory[c].score || 0);
                     }
-                    rankBox.innerHTML = html3;
+                } catch(e) {}
+            }
+        }
+        
+        // 4. 如果当前用户的总分可能来自其他来源，也检查一下
+        // 如果用户的总分大于0，但没有历史记录，尝试使用当前总分
+        if (periodScore === 0 && u.totalScore > 0) {
+            // 检查是否有任何活动记录在时间段内
+            var hasActivity = false;
+            if (u.warmupDate) {
+                try {
+                    var d = new Date(u.warmupDate);
+                    if (d >= periodStart) hasActivity = true;
+                } catch(e) {}
+            }
+            if (!hasActivity && u.rankHistory && u.rankHistory.length > 0) {
+                for (var r2 = 0; r2 < u.rankHistory.length; r2++) {
+                    try {
+                        var d = new Date(u.rankHistory[r2].date);
+                        if (d >= periodStart) { hasActivity = true; break; }
+                    } catch(e) {}
+                }
+            }
+            if (!hasActivity && u.challengeHistory && u.challengeHistory.length > 0) {
+                for (var c2 = 0; c2 < u.challengeHistory.length; c2++) {
+                    try {
+                        var d = new Date(u.challengeHistory[c2].date);
+                        if (d >= periodStart) { hasActivity = true; break; }
+                    } catch(e) {}
+                }
+            }
+            if (hasActivity) {
+                periodScore = u.totalScore || 0;
+            }
+        }
+        
+        return {
+            user: u,
+            periodScore: periodScore
+        };
+    });
+    
+    // 过滤掉得分为0的用户，按分数降序排列，取前10
+    var sorted3 = filtered
+        .filter(function(item) { return item.periodScore > 0; })
+        .sort(function(a, b) { return b.periodScore - a.periodScore; })
+        .slice(0, 10);
+    
+    var html3 = '<div class="rank-section-title">' + (isMonth ? '📅 月榜（本月前10）' :
+        '📅 周榜（本周前10）') + '</div>';
+    if (sorted3.length === 0) {
+        html3 += '<p class="text-center text-gray-400 py-4">本月/本周暂无活跃用户</p>';
+    } else {
+        for (var q = 0; q < sorted3.length; q++) {
+            var item = sorted3[q];
+            var u3 = item.user;
+            var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
+            var isMe = currentUser && u3.name === currentUser.name;
+            html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
+                    (isMe ? ' border-2 border-primary' : '') + '">' +
+                '<div><span class="font-bold text-primary">' + medal4 + '</span>' +
+                '<span class="ml-2 font-medium">' + u3.name + '</span>' +
+                '<span class="text-gray-400 text-xs ml-1">(' + (u3.unit || '未分配') + ')</span>' +
+                (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
+                '</div>' +
+                '<span class="font-bold text-success">' + item.periodScore + '分</span>' +
+                '</div>';
+        }
+    }
+    rankBox.innerHTML = html3;
                 }
                 hideLoading();
             } catch (error) {
