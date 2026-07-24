@@ -21,7 +21,7 @@ export async function onRequest(context) {
         const db = env.D1_DB;
 
         const result = await db.prepare(`
-            UPDATE users SET pwd = ?, updated_at = datetime('now') WHERE name = ?
+            UPDATE users SET pwd = ?, version = version + 1, updated_at = datetime('now') WHERE name = ?
         `).bind(newPwd, name).run();
 
         if (result.changes === 0) {

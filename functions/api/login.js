@@ -21,7 +21,9 @@ export async function onRequest(context) {
         const db = env.D1_DB;
 
         const user = await db.prepare(`
-            SELECT * FROM users WHERE name = ?
+            SELECT id, name, unit, pwd, warmup_score, rank_score, challenge_score, total_score,
+                   warmup_date, rank_remain, challenge_date, challenge_used, version, created_at
+            FROM users WHERE name = ?
         `).bind(name).first();
 
         if (!user) {

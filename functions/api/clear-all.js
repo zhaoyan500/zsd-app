@@ -20,9 +20,14 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
 
-        await db.prepare('DELETE FROM quiz_history').run();
-        await db.prepare('DELETE FROM rank_daily').run();
-        await db.prepare('DELETE FROM users').run();
+        // 使用事务保证原子性
+        const statements = [
+            db.prepare('DELETE FROM quiz_history'),
+            db.prepare('DELETE FROM rank_daily'),
+            db.prepare('DELETE FROM users')
+        ];
+
+        await db.batch(statements);
 
         return new Response(JSON.stringify({ success: true }), { headers });
     } catch (err) {

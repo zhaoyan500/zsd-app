@@ -11,7 +11,7 @@ export async function onRequest(context) {
 
         const users = await db.prepare(`
             SELECT id, name, unit, warmup_score, rank_score, challenge_score, total_score,
-                   warmup_date, challenge_date, challenge_used, created_at
+                   warmup_date, challenge_date, challenge_used, version, created_at
             FROM users
             ORDER BY total_score DESC
         `).all();

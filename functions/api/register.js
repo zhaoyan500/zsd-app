@@ -25,17 +25,17 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '用户名已存在' }), { status: 409, headers });
         }
 
-        const id = Date.now().toString();
+        const id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 6);
         const now = new Date().toISOString();
 
         await db.prepare(`
-            INSERT INTO users (id, name, unit, pwd, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, name, unit, pwd, version, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
         `).bind(id, name, unit, pwd, now, now).run();
 
         const user = await db.prepare(`
             SELECT id, name, unit, warmup_score, rank_score, challenge_score, total_score,
-                   warmup_date, rank_remain, challenge_date, challenge_used, created_at
+                   warmup_date, rank_remain, challenge_date, challenge_used, version, created_at
             FROM users WHERE id = ?
         `).bind(id).first();
 
