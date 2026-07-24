@@ -1261,32 +1261,26 @@
         // ============================================================
         //  排行榜
         // ============================================================
-        function showPage(pageId) {
-    document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
-    var el = document.getElementById(pageId);
-    if (el) {
-        el.classList.add('active');
-        var header = document.getElementById('globalHeader');
-        var isQuizMode = (pageId === 'quizPage' || pageId === 'resultPage');
-        if (isQuizMode) {
-            header.classList.add('compact');
-            el.classList.add('quiz-mode');
-        } else {
-            header.classList.remove('compact');
-            el.classList.remove('quiz-mode');
-        }
-        if (pageId === 'rankPage') {
-            // 先获取数据再渲染排行榜
-            fetchAllUsers().then(function() {
-                renderRank();
-            }).catch(function() {
-                renderRank();
-            });
-        }
-        if (pageId === 'adminPage') renderAdminData();
-        if (pageId === 'mainPage') updateMainUI();
+       function setRankFilter(type) {
+    rankFilter = type;
+    var tabs = document.querySelectorAll('.rank-tab');
+    for (var i = 0; i < tabs.length; i++) {
+        tabs[i].classList.toggle('active', tabs[i].dataset.rank === type);
     }
-        }
+    var sel = document.getElementById('teamSelector');
+    var teamTotal = document.getElementById('teamTotalRank');
+    if (type === 'unit') {
+        sel.classList.remove('hidden');
+        // 先获取数据再填充战队选择器
+        populateTeamSelectorWithFetch();
+        teamTotal.classList.add('hidden');
+    } else {
+        sel.classList.add('hidden');
+        if (type === 'total') teamTotal.classList.remove('hidden');
+        else teamTotal.classList.add('hidden');
+    }
+    renderRank();
+       }
 async function populateTeamSelectorWithFetch() {
     try {
         var list = await fetchAllUsers();
