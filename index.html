@@ -1568,6 +1568,7 @@
                     // ============================================================
                     //  【修复】月榜/周榜 - 统计个人总积分（热身+排位+挑战）
                     //  按时间段筛选：只统计该周期内获得的积分
+                    //  关键修复：正确累加历史记录中的每一笔得分
                     // ============================================================
                     teamTotalRank.classList.add('hidden');
                     
@@ -1598,10 +1599,11 @@
                         var periodScore = 0;
                         var hasActivity = false;
                         
-                        // 1. 热身赛 - 检查 warmupDate 是否在时间段内
-                        if (user.warmupDate) {
+                        // 1. 热身赛 - 检查 warmupDate 是否在时间段内，且在时间段内获得的热身赛得分
+                        if (user.warmupDate && user.warmupScore) {
                             try {
                                 var warmupDate = new Date(user.warmupDate);
+                                // warmupDate 是最后游玩日期，如果最后游玩日期在周期内，说明热身赛得分是在周期内获得的
                                 if (warmupDate >= periodStart) {
                                     periodScore += (user.warmupScore || 0);
                                     hasActivity = true;
@@ -1618,8 +1620,12 @@
                                     var rankEntry = user.rankHistory[r];
                                     if (rankEntry && rankEntry.date) {
                                         var rankDate = new Date(rankEntry.date);
+                                        // 注意：rankDate 可能包含时间，只比较日期部分
+                                        var rankDateStr = rankDate.toDateString();
+                                        var periodStartStr = periodStart.toDateString();
                                         if (rankDate >= periodStart) {
-                                            periodScore += (rankEntry.score || 0);
+                                            var score = rankEntry.score || 0;
+                                            periodScore += score;
                                             hasActivity = true;
                                         }
                                     }
@@ -1637,7 +1643,8 @@
                                     if (challengeEntry && challengeEntry.date) {
                                         var challengeDate = new Date(challengeEntry.date);
                                         if (challengeDate >= periodStart) {
-                                            periodScore += (challengeEntry.score || 0);
+                                            var score = challengeEntry.score || 0;
+                                            periodScore += score;
                                             hasActivity = true;
                                         }
                                     }
@@ -1647,7 +1654,7 @@
                             }
                         }
                         
-                        // 只要有活动就加入榜单（包括得分为0的情况，但按分数排序时会排在后面）
+                        // 只要有活动就加入榜单
                         if (hasActivity) {
                             periodResults.push({
                                 user: user,
