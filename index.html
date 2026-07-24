@@ -864,7 +864,7 @@
         // ============================================================
         //  用户数据管理
         // ============================================================
-        function checkDailyReset(user) {
+        /*function checkDailyReset(user) {
             if (!user) return;
             var today = new Date().toDateString();
             
@@ -881,7 +881,34 @@
                 var used = user.rankDaily.used || 0;
                 user.rankRemain = Math.max(0, 3 - used);
             }
-        }
+        }*/
+        // ============================================================
+//  用户数据管理 - 修复版
+// ============================================================
+function checkDailyReset(user) {
+    if (!user) return;
+    var today = new Date().toDateString();
+    
+    // 初始化 rankDaily
+    if (!user.rankDaily) {
+        user.rankDaily = { date: today, used: 0 };
+        user.rankRemain = 3;
+        return;
+    }
+    
+    // 判断是否新的一天
+    if (user.rankDaily.date !== today) {
+        // 新的一天：重置次数
+        user.rankDaily = { date: today, used: 0 };
+        user.rankRemain = 3;
+        console.log('🔄 新的一天，排位赛次数已重置');
+    } else {
+        // ✅ 同一天：根据已使用次数计算剩余
+        var used = user.rankDaily.used || 0;
+        user.rankRemain = Math.max(0, 3 - used);
+        console.log('📊 今日已用排位赛 ' + used + ' 次，剩余 ' + user.rankRemain + ' 次');
+    }
+}
 
         function checkChallengeReset(user) {
             var today = new Date().toDateString();
@@ -1183,7 +1210,7 @@
             renderQuestion();
         }
 
-        async function endQuiz(reason) {
+        /*async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
                 timerInterval = null; }
             if (!currentUser) return;
@@ -1230,7 +1257,76 @@
                 console.log('用户数据已保存到云端');
             } catch (e) {
                 console.error('保存失败:', e);
-            }
+            }*/
+        // ============================================================
+//  答题结束 - 修复排位赛次数累加
+// ============================================================
+async function endQuiz(reason) {
+    if (timerInterval) { clearInterval(timerInterval);
+        timerInterval = null; }
+    if (!currentUser) return;
+
+    var today = new Date().toDateString();
+    var mode = currentMode;
+
+    // 先执行每日重置检查
+    checkDailyReset(currentUser);
+
+    if (mode === 'warmup') {
+        if (currentUser.warmupDate !== today) {
+            currentUser.warmupDate = today;
+            currentUser.warmupScore = Math.max(currentUser.warmupScore || 0, userScore);
+        } else {
+            currentUser.warmupScore = Math.max(currentUser.warmupScore || 0, userScore);
+        }
+    } else if (mode === 'ranked') {
+        // ✅ 确保 rankDaily 存在
+        if (!currentUser.rankDaily) {
+            currentUser.rankDaily = { date: today, used: 0 };
+        }
+        
+        // ✅ 如果是新的一天，重置
+        if (currentUser.rankDaily.date !== today) {
+            currentUser.rankDaily = { date: today, used: 1 };
+        } else {
+            // ✅ 同一天，使用次数 +1
+            currentUser.rankDaily.used = (currentUser.rankDaily.used || 0) + 1;
+        }
+        
+        // ✅ 计算剩余次数
+        currentUser.rankRemain = Math.max(0, 3 - currentUser.rankDaily.used);
+        
+        // ✅ 更新最高分（仅当本次得分更高）
+        if (userScore > (currentUser.rankScore || 0)) {
+            currentUser.rankScore = userScore;
+        }
+        
+        // 保存历史记录
+        if (!currentUser.rankHistory) currentUser.rankHistory = [];
+        currentUser.rankHistory.push({ date: today, score: userScore });
+        console.log('✅ 排位赛已保存: 今日已用 ' + currentUser.rankDaily.used + ' 次，剩余 ' + currentUser.rankRemain + ' 次');
+        
+    } else if (mode === 'challenge') {
+        currentUser.challengeDate = today;
+        currentUser.challengeUsed = (currentUser.challengeUsed || 0) + 1;
+        if (userScore > (currentUser.challengeScore || 0)) {
+            currentUser.challengeScore = userScore;
+        }
+        if (!currentUser.challengeHistory) currentUser.challengeHistory = [];
+        currentUser.challengeHistory.push({ date: today, score: userScore });
+    }
+
+    updateTotalScore(currentUser);
+    
+    try {
+        await saveUserToCloud(currentUser);
+        console.log('✅ 用户数据已保存到云端');
+    } catch (e) {
+        console.error('❌ 保存失败:', e);
+    }
+
+    // ... 后续 UI 更新代码保持不变 ...
+}
 
             document.getElementById('resName').textContent = currentUser.name;
             document.getElementById('resUnit').textContent = currentUser.unit;
