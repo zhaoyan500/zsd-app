@@ -591,7 +591,7 @@
         }
 
         // ============================================================
-        //  【核心修复】排位赛数据独立存储 - 与 currentUser 完全解耦
+        //  排位赛数据管理 - 云端优先
         // ============================================================
         function getRankDailyKey(name) {
             return 'rankDaily_' + (name || 'default');
@@ -621,11 +621,20 @@
         function getRankRemainCount(name) {
             if (!name) return 3;
             var today = new Date().toDateString();
-            var data = getRankDailyData(name);
-            if (!data) {
-                return 3;
+            
+            // 优先使用 currentUser 中的数据（云端同步）
+            if (currentUser && currentUser.name === name && currentUser.rankDaily) {
+                var data = currentUser.rankDaily;
+                if (data.date === today) {
+                    var used = parseInt(data.used) || 0;
+                    return Math.max(0, 3 - used);
+                } else {
+                    return 3;
+                }
             }
-            if (data.date !== today) {
+            
+            var data = getRankDailyData(name);
+            if (!data || data.date !== today) {
                 return 3;
             }
             var used = parseInt(data.used) || 0;
@@ -635,35 +644,58 @@
         function useRankDaily(name) {
             if (!name) return { success: false, remain: 0, message: '用户名为空' };
             var today = new Date().toDateString();
-            var data = getRankDailyData(name);
-            if (!data) {
+            
+            // 优先使用 currentUser 中的数据（云端同步）
+            var data = null;
+            if (currentUser && currentUser.name === name && currentUser.rankDaily && currentUser.rankDaily.date === today) {
+                data = currentUser.rankDaily;
+            } else {
+                data = getRankDailyData(name);
+            }
+            
+            if (!data || data.date !== today) {
                 data = { date: today, used: 1 };
                 setRankDailyData(name, data);
+                if (currentUser && currentUser.name === name) {
+                    currentUser.rankDaily = data;
+                    currentUser.rankRemain = 2;
+                }
                 return { success: true, remain: 2, used: 1 };
             }
-            if (data.date !== today) {
-                data = { date: today, used: 1 };
-                setRankDailyData(name, data);
-                return { success: true, remain: 2, used: 1 };
-            }
+            
             var used = parseInt(data.used) || 0;
             if (used >= 3) {
                 return { success: false, remain: 0, message: '今日排位赛次数已用完' };
             }
+            
             data.used = used + 1;
             setRankDailyData(name, data);
+            if (currentUser && currentUser.name === name) {
+                currentUser.rankDaily = data;
+                currentUser.rankRemain = 3 - data.used;
+            }
             var remain = 3 - data.used;
             return { success: true, remain: remain, used: data.used };
         }
 
+        // 应用排位赛数据到用户 - 云端优先
         function applyRankDataToUser(user) {
             if (!user || !user.name) return;
             var today = new Date().toDateString();
+            
+            // 优先使用云端数据
+            if (user.rankDaily && user.rankDaily.date === today) {
+                var used = parseInt(user.rankDaily.used) || 0;
+                user.rankRemain = Math.max(0, 3 - used);
+                // 同步到 localStorage
+                setRankDailyData(user.name, user.rankDaily);
+                console.log('📊 [' + user.name + '] 从云端同步排位赛: 已用 ' + used + ' 次，剩余 ' + user.rankRemain + ' 次');
+                return;
+            }
+            
+            // 云端没有今日数据，检查 localStorage
             var data = getRankDailyData(user.name);
-            if (!data) {
-                data = { date: today, used: 0 };
-                setRankDailyData(user.name, data);
-            } else if (data.date !== today) {
+            if (!data || data.date !== today) {
                 data = { date: today, used: 0 };
                 setRankDailyData(user.name, data);
             }
@@ -895,7 +927,7 @@
         }
 
         // ============================================================
-        //  登录
+        //  登录 - 云端优先同步
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
@@ -914,7 +946,20 @@
                 var rawUser = result.user || result;
                 currentUser = normalizeUser(rawUser);
 
-                applyRankDataToUser(currentUser);
+                // 云端数据覆盖 localStorage
+                var today = new Date().toDateString();
+                if (currentUser.rankDaily && currentUser.rankDaily.date === today) {
+                    // 使用云端数据
+                    setRankDailyData(currentUser.name, currentUser.rankDaily);
+                    currentUser.rankRemain = Math.max(0, 3 - (currentUser.rankDaily.used || 0));
+                } else {
+                    // 云端没有今日数据，重置
+                    var initData = { date: today, used: 0 };
+                    setRankDailyData(currentUser.name, initData);
+                    currentUser.rankDaily = initData;
+                    currentUser.rankRemain = 3;
+                }
+
                 updateTotalScore(currentUser);
 
                 showPage('mainPage');
@@ -928,7 +973,7 @@
         }
 
         // ============================================================
-        //  【核心修复】保存用户数据到云端 - 添加版本号和ID
+        //  保存用户数据到云端 - 带版本号
         // ============================================================
         async function saveUserToCloud(user) {
             try {
@@ -964,8 +1009,15 @@
                 if (result && result.user) {
                     var updated = normalizeUser(result.user);
                     if (currentUser) {
+                        // 使用云端返回的最新数据
                         updated.rankDaily = updated.rankDaily || currentUser.rankDaily || { date: new Date().toDateString(), used: 0 };
                         updated.rankRemain = updated.rank_remain !== undefined ? updated.rank_remain : 3;
+                        
+                        // 同步到 localStorage
+                        if (updated.rankDaily && updated.rankDaily.date) {
+                            setRankDailyData(updated.name, updated.rankDaily);
+                        }
+                        
                         if (!updated.rankHistory || updated.rankHistory.length === 0) {
                             updated.rankHistory = currentUser.rankHistory || [];
                         }
