@@ -939,7 +939,7 @@
                     warmupScore: user.warmupScore || 0,
                     warmupDate: user.warmupDate || '',
                     rankScore: user.rankScore || 0,
-                    rankDaily: user.rankDaily || { date: '', used: 0 },
+                    rankDaily: user.rankDaily || { date: new Date().toDateString(), used: 0 },
                     rankHistory: user.rankHistory || [],
                     challengeScore: user.challengeScore || 0,
                     challengeDate: user.challengeDate || '',
@@ -964,8 +964,8 @@
                 if (result && result.user) {
                     var updated = normalizeUser(result.user);
                     if (currentUser) {
-                        updated.rankDaily = currentUser.rankDaily || { date: new Date().toDateString(), used: 0 };
-                        updated.rankRemain = currentUser.rankRemain !== undefined ? currentUser.rankRemain : 3;
+                        updated.rankDaily = updated.rankDaily || currentUser.rankDaily || { date: new Date().toDateString(), used: 0 };
+                        updated.rankRemain = updated.rank_remain !== undefined ? updated.rank_remain : 3;
                         if (!updated.rankHistory || updated.rankHistory.length === 0) {
                             updated.rankHistory = currentUser.rankHistory || [];
                         }
