@@ -591,121 +591,7 @@
         }
 
         // ============================================================
-        //  排位赛数据管理 - 云端优先
-        // ============================================================
-        function getRankDailyKey(name) {
-            return 'rankDaily_' + (name || 'default');
-        }
-
-        function getRankDailyData(name) {
-            var key = getRankDailyKey(name);
-            var data = getStorage(key, null);
-            if (data && data.date && data.used !== undefined) {
-                return data;
-            }
-            return null;
-        }
-
-        function setRankDailyData(name, data) {
-            var key = getRankDailyKey(name);
-            setStorage(key, data);
-        }
-
-        function resetRankDailyData(name) {
-            var today = new Date().toDateString();
-            var data = { date: today, used: 0 };
-            setRankDailyData(name, data);
-            return data;
-        }
-
-        function getRankRemainCount(name) {
-            if (!name) return 3;
-            var today = new Date().toDateString();
-            
-            // 优先使用 currentUser 中的数据（云端同步）
-            if (currentUser && currentUser.name === name && currentUser.rankDaily) {
-                var data = currentUser.rankDaily;
-                if (data.date === today) {
-                    var used = parseInt(data.used) || 0;
-                    return Math.max(0, 3 - used);
-                } else {
-                    return 3;
-                }
-            }
-            
-            var data = getRankDailyData(name);
-            if (!data || data.date !== today) {
-                return 3;
-            }
-            var used = parseInt(data.used) || 0;
-            return Math.max(0, 3 - used);
-        }
-
-        function useRankDaily(name) {
-            if (!name) return { success: false, remain: 0, message: '用户名为空' };
-            var today = new Date().toDateString();
-            
-            // 优先使用 currentUser 中的数据（云端同步）
-            var data = null;
-            if (currentUser && currentUser.name === name && currentUser.rankDaily && currentUser.rankDaily.date === today) {
-                data = currentUser.rankDaily;
-            } else {
-                data = getRankDailyData(name);
-            }
-            
-            if (!data || data.date !== today) {
-                data = { date: today, used: 1 };
-                setRankDailyData(name, data);
-                if (currentUser && currentUser.name === name) {
-                    currentUser.rankDaily = data;
-                    currentUser.rankRemain = 2;
-                }
-                return { success: true, remain: 2, used: 1 };
-            }
-            
-            var used = parseInt(data.used) || 0;
-            if (used >= 3) {
-                return { success: false, remain: 0, message: '今日排位赛次数已用完' };
-            }
-            
-            data.used = used + 1;
-            setRankDailyData(name, data);
-            if (currentUser && currentUser.name === name) {
-                currentUser.rankDaily = data;
-                currentUser.rankRemain = 3 - data.used;
-            }
-            var remain = 3 - data.used;
-            return { success: true, remain: remain, used: data.used };
-        }
-
-        // 应用排位赛数据到用户 - 云端优先
-        function applyRankDataToUser(user) {
-            if (!user || !user.name) return;
-            var today = new Date().toDateString();
-            
-            // 优先使用云端数据
-            if (user.rankDaily && user.rankDaily.date === today) {
-                var used = parseInt(user.rankDaily.used) || 0;
-                user.rankRemain = Math.max(0, 3 - used);
-                // 同步到 localStorage
-                setRankDailyData(user.name, user.rankDaily);
-                console.log('📊 [' + user.name + '] 从云端同步排位赛: 已用 ' + used + ' 次，剩余 ' + user.rankRemain + ' 次');
-                return;
-            }
-            
-            // 云端没有今日数据，检查 localStorage
-            var data = getRankDailyData(user.name);
-            if (!data || data.date !== today) {
-                data = { date: today, used: 0 };
-                setRankDailyData(user.name, data);
-            }
-            user.rankDaily = data;
-            user.rankRemain = Math.max(0, 3 - (parseInt(data.used) || 0));
-            console.log('📊 [' + user.name + '] 排位赛: 已用 ' + data.used + ' 次，剩余 ' + user.rankRemain + ' 次');
-        }
-
-        // ============================================================
-        //  存储工具
+        //  存储工具（仅用于缓存，不作为数据源）
         // ============================================================
         function getStorage(key, def) {
             try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; }
@@ -713,6 +599,153 @@
 
         function setStorage(key, val) {
             localStorage.setItem(key, JSON.stringify(val));
+        }
+
+        // ============================================================
+        //  排位赛数据管理 - 完全云端优先
+        // ============================================================
+        
+        // 从云端同步排位赛数据
+        async function syncRankDailyFromCloud(name) {
+            if (!name) return null;
+            try {
+                var result = await apiCall('/sync-rank', 'POST', { name: name });
+                if (result && result.rankDaily) {
+                    var today = new Date().toDateString();
+                    var data = result.rankDaily;
+                    // 更新 currentUser
+                    if (currentUser && currentUser.name === name) {
+                        currentUser.rankDaily = data;
+                        currentUser.rankRemain = Math.max(0, 3 - (data.used || 0));
+                    }
+                    // 更新缓存
+                    setRankDailyCache(name, data);
+                    return data;
+                }
+                return null;
+            } catch (e) {
+                console.error('同步排位赛数据失败:', e);
+                return null;
+            }
+        }
+
+        function getRankDailyCache(name) {
+            var key = 'rankDaily_' + (name || 'default');
+            var data = getStorage(key, null);
+            if (data && data.date && data.used !== undefined) {
+                return data;
+            }
+            return null;
+        }
+
+        function setRankDailyCache(name, data) {
+            var key = 'rankDaily_' + (name || 'default');
+            setStorage(key, data);
+        }
+
+        // 获取排位赛剩余次数 - 优先从云端获取
+        async function getRankRemainCount(name) {
+            if (!name) return 3;
+            var today = new Date().toDateString();
+            
+            // 如果 currentUser 有今日数据，直接使用
+            if (currentUser && currentUser.name === name && currentUser.rankDaily && currentUser.rankDaily.date === today) {
+                var used = parseInt(currentUser.rankDaily.used) || 0;
+                return Math.max(0, 3 - used);
+            }
+            
+            // 否则从缓存读取
+            var data = getRankDailyCache(name);
+            if (data && data.date === today) {
+                var used = parseInt(data.used) || 0;
+                return Math.max(0, 3 - used);
+            }
+            
+            // 缓存也没有，从云端同步
+            try {
+                var result = await apiCall('/sync-rank', 'POST', { name: name });
+                if (result && result.rankDaily && result.rankDaily.date === today) {
+                    var used = parseInt(result.rankDaily.used) || 0;
+                    setRankDailyCache(name, result.rankDaily);
+                    if (currentUser && currentUser.name === name) {
+                        currentUser.rankDaily = result.rankDaily;
+                        currentUser.rankRemain = Math.max(0, 3 - used);
+                    }
+                    return Math.max(0, 3 - used);
+                }
+            } catch(e) {
+                console.error('获取排位赛次数失败:', e);
+            }
+            
+            // 所有方式都失败，返回3
+            return 3;
+        }
+
+        // 使用排位赛次数 - 云端扣减
+        async function useRankDaily(name) {
+            if (!name) return { success: false, remain: 0, message: '用户名为空' };
+            var today = new Date().toDateString();
+            
+            try {
+                // 先检查当前剩余次数
+                var remain = await getRankRemainCount(name);
+                if (remain <= 0) {
+                    return { success: false, remain: 0, message: '今日排位赛次数已用完' };
+                }
+                
+                // 调用云端扣减接口
+                var result = await apiCall('/use-rank', 'POST', { name: name });
+                
+                if (result && result.error) {
+                    return { success: false, remain: 0, message: result.error };
+                }
+                
+                if (result && result.rankDaily) {
+                    var data = result.rankDaily;
+                    var used = parseInt(data.used) || 0;
+                    var newRemain = Math.max(0, 3 - used);
+                    
+                    // 更新 currentUser
+                    if (currentUser && currentUser.name === name) {
+                        currentUser.rankDaily = data;
+                        currentUser.rankRemain = newRemain;
+                    }
+                    
+                    // 更新缓存
+                    setRankDailyCache(name, data);
+                    
+                    return { success: true, remain: newRemain, used: used };
+                }
+                
+                return { success: false, remain: 0, message: '扣减失败' };
+            } catch (e) {
+                console.error('使用排位赛次数失败:', e);
+                return { success: false, remain: 0, message: '网络错误' };
+            }
+        }
+
+        // 应用排位赛数据到用户 - 从云端同步
+        function applyRankDataToUser(user) {
+            if (!user || !user.name) return;
+            var today = new Date().toDateString();
+            
+            // 优先使用云端数据（user.rankDaily 来自登录响应）
+            if (user.rankDaily && user.rankDaily.date === today) {
+                var used = parseInt(user.rankDaily.used) || 0;
+                user.rankRemain = Math.max(0, 3 - used);
+                setRankDailyCache(user.name, user.rankDaily);
+                console.log('📊 [' + user.name + '] 从云端同步排位赛: 已用 ' + used + ' 次，剩余 ' + user.rankRemain + ' 次');
+                return;
+            }
+            
+            // 云端没有今日数据，尝试从缓存读取
+            var data = getRankDailyCache(user.name);
+            if (!data || data.date !== today) {
+                data = { date: today, used: 0 };
+                setRankDailyCache(user.name, data);
+            }
+            user.rankDaily = data;
+            user.rankRemain = Math.max(0, 3 - (parseInt(data.used) || 0));
         }
 
         function getQuiz(mode) {
@@ -909,7 +942,7 @@
 
                 var today = new Date().toDateString();
                 var initData = { date: today, used: 0 };
-                setRankDailyData(currentUser.name, initData);
+                setRankDailyCache(currentUser.name, initData);
                 currentUser.rankDaily = initData;
                 currentUser.rankRemain = 3;
 
@@ -950,12 +983,12 @@
                 var today = new Date().toDateString();
                 if (currentUser.rankDaily && currentUser.rankDaily.date === today) {
                     // 使用云端数据
-                    setRankDailyData(currentUser.name, currentUser.rankDaily);
+                    setRankDailyCache(currentUser.name, currentUser.rankDaily);
                     currentUser.rankRemain = Math.max(0, 3 - (currentUser.rankDaily.used || 0));
                 } else {
                     // 云端没有今日数据，重置
                     var initData = { date: today, used: 0 };
-                    setRankDailyData(currentUser.name, initData);
+                    setRankDailyCache(currentUser.name, initData);
                     currentUser.rankDaily = initData;
                     currentUser.rankRemain = 3;
                 }
@@ -1013,9 +1046,9 @@
                         updated.rankDaily = updated.rankDaily || currentUser.rankDaily || { date: new Date().toDateString(), used: 0 };
                         updated.rankRemain = updated.rank_remain !== undefined ? updated.rank_remain : 3;
                         
-                        // 同步到 localStorage
+                        // 同步到缓存
                         if (updated.rankDaily && updated.rankDaily.date) {
-                            setRankDailyData(updated.name, updated.rankDaily);
+                            setRankDailyCache(updated.name, updated.rankDaily);
                         }
                         
                         if (!updated.rankHistory || updated.rankHistory.length === 0) {
@@ -1096,9 +1129,9 @@
         }
 
         // ============================================================
-        //  进入赛制
+        //  进入赛制 - 先同步排位赛数据
         // ============================================================
-        function enterMode(mode) {
+        async function enterMode(mode) {
             if (!currentUser) {
                 alert('请先登录');
                 return;
@@ -1110,13 +1143,24 @@
             }
 
             if (mode === 'ranked') {
-                var remain = getRankRemainCount(currentUser.name);
-                if (remain <= 0) {
-                    alert('⛔ 今日排位赛次数已用完（共3次），请明天再来！');
+                // 从云端获取最新的排位赛剩余次数
+                showLoading();
+                try {
+                    var remain = await getRankRemainCount(currentUser.name);
+                    currentUser.rankRemain = remain;
                     updateMainUI();
+                    
+                    if (remain <= 0) {
+                        alert('⛔ 今日排位赛次数已用完（共3次），请明天再来！');
+                        hideLoading();
+                        return;
+                    }
+                } catch (e) {
+                    alert('获取排位赛数据失败，请重试');
+                    hideLoading();
                     return;
                 }
-                currentUser.rankRemain = remain;
+                hideLoading();
             }
 
             if (mode === 'challenge') {
@@ -1336,7 +1380,7 @@
         }
 
         // ============================================================
-        //  答题结束 - 使用独立存储扣减排位赛次数
+        //  答题结束 - 使用云端扣减排位赛次数
         // ============================================================
         async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
@@ -1354,15 +1398,16 @@
                     currentUser.warmupScore = Math.max(currentUser.warmupScore || 0, userScore);
                 }
             } else if (mode === 'ranked') {
-                var result = useRankDaily(currentUser.name);
+                // 使用云端扣减
+                var result = await useRankDaily(currentUser.name);
                 if (!result.success) {
                     alert('⛔ ' + result.message);
                     showPage('mainPage');
                     updateMainUI();
                     return;
                 }
-                var data = getRankDailyData(currentUser.name);
-                currentUser.rankDaily = data;
+                
+                currentUser.rankDaily = { date: today, used: result.used };
                 currentUser.rankRemain = result.remain;
 
                 if (userScore > (currentUser.rankScore || 0)) {
