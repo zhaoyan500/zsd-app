@@ -1568,171 +1568,161 @@
                     }
                     rankBox.innerHTML = html2;
 
-                } else {
-                    // ============================================================
-                    //  🔧 修复区域：月榜/周榜 - 正确统计时间段内个人总积分
-                    //  修复说明：原代码只统计了热身赛积分，现在增加排位赛和挑战赛
-                    // ============================================================
-                    teamTotalRank.classList.add('hidden');
-                    
-                    var now = new Date();
-                    var isMonth = rankFilter === 'month';
-                    var periodStart;
-                    if (isMonth) {
-                        // 月初
-                        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                    } else {
-                        // 本周一（周一为一周开始）
-                        var day = now.getDay();
-                        var diff = now.getDate() - day + (day === 0 ? -6 : 1);
-                        periodStart = new Date(now.getFullYear(), now.getMonth(), diff);
-                        periodStart.setHours(0, 0, 0, 0);
-                    }
-                    
-                    // 计算每个用户在时间段内的总得分（热身 + 排位 + 挑战）
-                    var periodResults = [];
-                    
-                    for (var uIdx = 0; uIdx < list.length; uIdx++) {
-                        var user = list[uIdx];
-                        var periodScore = 0;
-                        var hasActivity = false;
-                        
-                        // ============================================================
-                        //  1. 热身赛 - 检查 warmupDate 是否在时间段内
-                        // ============================================================
-                        if (user.warmupDate) {
-                            try {
-                                var warmupDate = new Date(user.warmupDate);
-                                if (warmupDate >= periodStart) {
-                                    periodScore += (user.warmupScore || 0);
-                                    hasActivity = true;
-                                }
-                            } catch(e) {}
-                        }
-                        
-                        // ============================================================
-                        //  2. 排位赛历史 - 累加时间段内的所有排位赛得分
-                        //     🔧 修复：确保 rankHistory 中的所有得分都被累加
-                        // ============================================================
-                        if (user.rankHistory && Array.isArray(user.rankHistory)) {
-                            for (var r = 0; r < user.rankHistory.length; r++) {
-                                try {
-                                    var rankDate = new Date(user.rankHistory[r].date);
-                                    if (rankDate >= periodStart) {
-                                        var score = user.rankHistory[r].score || 0;
-                                        periodScore += score;
-                                        hasActivity = true;
-                                    }
-                                } catch(e) {}
-                            }
-                        }
-                        
-                        // ============================================================
-                        //  3. 挑战赛历史 - 累加时间段内的所有挑战赛得分
-                        //     🔧 修复：确保 challengeHistory 中的所有得分都被累加
-                        // ============================================================
-                        if (user.challengeHistory && Array.isArray(user.challengeHistory)) {
-                            for (var c = 0; c < user.challengeHistory.length; c++) {
-                                try {
-                                    var challengeDate = new Date(user.challengeHistory[c].date);
-                                    if (challengeDate >= periodStart) {
-                                        var score = user.challengeHistory[c].score || 0;
-                                        periodScore += score;
-                                        hasActivity = true;
-                                    }
-                                } catch(e) {}
-                            }
-                        }
-                        
-                        // ============================================================
-                        //  4. 🔧 额外修复：如果用户有总积分但历史记录为空，
-                        //     检查是否在时间段内有任何活动记录
-                        // ============================================================
-                        if (!hasActivity && user.totalScore > 0) {
-                            // 检查是否有任何活动记录在时间段内
-                            var hasAnyActivity = false;
-                            
-                            // 检查 warmupDate
-                            if (user.warmupDate) {
-                                try {
-                                    var d = new Date(user.warmupDate);
-                                    if (d >= periodStart) hasAnyActivity = true;
-                                } catch(e) {}
-                            }
-                            
-                            // 检查 rankHistory
-                            if (!hasAnyActivity && user.rankHistory && user.rankHistory.length > 0) {
-                                for (var r2 = 0; r2 < user.rankHistory.length; r2++) {
-                                    try {
-                                        var d = new Date(user.rankHistory[r2].date);
-                                        if (d >= periodStart) { hasAnyActivity = true; break; }
-                                    } catch(e) {}
-                                }
-                            }
-                            
-                            // 检查 challengeHistory
-                            if (!hasAnyActivity && user.challengeHistory && user.challengeHistory.length > 0) {
-                                for (var c2 = 0; c2 < user.challengeHistory.length; c2++) {
-                                    try {
-                                        var d = new Date(user.challengeHistory[c2].date);
-                                        if (d >= periodStart) { hasAnyActivity = true; break; }
-                                    } catch(e) {}
-                                }
-                            }
-                            
-                            if (hasAnyActivity) {
-                                // 如果历史记录为空但总积分>0，使用总积分
-                                // 但更准确的是从各模式得分累加
-                                var totalFromModes = (user.warmupScore || 0) + (user.rankScore || 0) + (user.challengeScore || 0);
-                                if (totalFromModes > 0) {
-                                    periodScore = totalFromModes;
-                                    hasActivity = true;
-                                } else {
-                                    periodScore = user.totalScore || 0;
-                                    hasActivity = true;
-                                }
-                            }
-                        }
-                        
-                        // 只有有活动的用户才加入榜单
-                        if (hasActivity && periodScore > 0) {
-                            periodResults.push({
-                                user: user,
-                                periodScore: periodScore
-                            });
+               // ============================================================
+//  🔧 修复：renderRank - 月榜/周榜正确统计个人在时间段内的总积分
+//  包含：热身赛 + 排位赛 + 挑战赛 所有得分
+// ============================================================
+
+// 在 renderRank 函数中，找到 else 分支（月榜/周榜部分），完整替换为以下代码：
+
+} else {
+    // ===== 月榜/周榜 =====
+    teamTotalRank.classList.add('hidden');
+    
+    var now = new Date();
+    var isMonth = rankFilter === 'month';
+    var periodStart;
+    if (isMonth) {
+        // 月初
+        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+        // 本周一（周一为一周开始）
+        var day = now.getDay();
+        var diff = now.getDate() - day + (day === 0 ? -6 : 1);
+        periodStart = new Date(now.getFullYear(), now.getMonth(), diff);
+        periodStart.setHours(0, 0, 0, 0);
+    }
+    
+    // 🔧 调试日志：查看时间段
+    console.log('===== 月榜/周榜统计 =====');
+    console.log('periodStart:', periodStart);
+    console.log('用户总数:', list.length);
+    
+    // 计算每个用户在时间段内的总得分（热身 + 排位 + 挑战）
+    var periodResults = [];
+    
+    for (var uIdx = 0; uIdx < list.length; uIdx++) {
+        var user = list[uIdx];
+        var periodScore = 0;
+        var hasActivity = false;
+        var scoreDetails = {
+            warmup: 0,
+            rank: 0,
+            challenge: 0
+        };
+        
+        // ============================================================
+        //  1. 热身赛 - 检查 warmupDate 是否在时间段内
+        // ============================================================
+        if (user.warmupDate) {
+            try {
+                var warmupDate = new Date(user.warmupDate);
+                if (warmupDate >= periodStart) {
+                    var warmupScore = user.warmupScore || 0;
+                    periodScore += warmupScore;
+                    scoreDetails.warmup = warmupScore;
+                    hasActivity = true;
+                }
+            } catch(e) {
+                console.warn('warmupDate 解析失败:', user.warmupDate);
+            }
+        }
+        
+        // ============================================================
+        //  2. 排位赛历史 - 累加时间段内的所有排位赛得分
+        // ============================================================
+        if (user.rankHistory && Array.isArray(user.rankHistory) && user.rankHistory.length > 0) {
+            console.log('用户 ' + user.name + ' 的 rankHistory:', user.rankHistory);
+            for (var r = 0; r < user.rankHistory.length; r++) {
+                try {
+                    var rankEntry = user.rankHistory[r];
+                    if (rankEntry && rankEntry.date) {
+                        var rankDate = new Date(rankEntry.date);
+                        if (rankDate >= periodStart) {
+                            var rankScore = rankEntry.score || 0;
+                            periodScore += rankScore;
+                            scoreDetails.rank += rankScore;
+                            hasActivity = true;
+                            console.log('  - 排位赛得分:', rankScore, '日期:', rankEntry.date);
                         }
                     }
-                    
-                    // 按分数降序排列，取前10
-                    periodResults.sort(function(a, b) {
-                        return b.periodScore - a.periodScore;
-                    });
-                    
-                    var topResults = periodResults.slice(0, 10);
-                    
-                    var html3 = '<div class="rank-section-title">' + (isMonth ? '📅 月榜（本月前10）' :
-                        '📅 周榜（本周前10）') + '</div>';
-                    
-                    if (topResults.length === 0) {
-                        html3 += '<p class="text-center text-gray-400 py-4">本月/本周暂无活跃用户</p>';
-                    } else {
-                        for (var q = 0; q < topResults.length; q++) {
-                            var item = topResults[q];
-                            var u3 = item.user;
-                            var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
-                            var isMe = currentUser && u3.name === currentUser.name;
-                            html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
-                                    (isMe ? ' border-2 border-primary' : '') + '">' +
-                                '<div><span class="font-bold text-primary">' + medal4 + '</span>' +
-                                '<span class="ml-2 font-medium">' + u3.name + '</span>' +
-                                '<span class="text-gray-400 text-xs ml-1">(' + (u3.unit || '未分配') + ')</span>' +
-                                (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
-                                '</div>' +
-                                '<span class="font-bold text-success">' + item.periodScore + '分</span>' +
-                                '</div>';
+                } catch(e) {
+                    console.warn('rankHistory 条目解析失败:', user.rankHistory[r]);
+                }
+            }
+        }
+        
+        // ============================================================
+        //  3. 挑战赛历史 - 累加时间段内的所有挑战赛得分
+        // ============================================================
+        if (user.challengeHistory && Array.isArray(user.challengeHistory) && user.challengeHistory.length > 0) {
+            console.log('用户 ' + user.name + ' 的 challengeHistory:', user.challengeHistory);
+            for (var c = 0; c < user.challengeHistory.length; c++) {
+                try {
+                    var challengeEntry = user.challengeHistory[c];
+                    if (challengeEntry && challengeEntry.date) {
+                        var challengeDate = new Date(challengeEntry.date);
+                        if (challengeDate >= periodStart) {
+                            var challengeScore = challengeEntry.score || 0;
+                            periodScore += challengeScore;
+                            scoreDetails.challenge += challengeScore;
+                            hasActivity = true;
+                            console.log('  - 挑战赛得分:', challengeScore, '日期:', challengeEntry.date);
                         }
                     }
-                    rankBox.innerHTML = html3;
+                } catch(e) {
+                    console.warn('challengeHistory 条目解析失败:', user.challengeHistory[c]);
+                }
+            }
+        }
+        
+        // 🔧 调试日志：显示每个用户的得分详情
+        if (hasActivity) {
+            console.log('用户:', user.name, '总得分:', periodScore, '详情:', scoreDetails);
+        }
+        
+        // 只有有活动的用户才加入榜单
+        if (hasActivity && periodScore > 0) {
+            periodResults.push({
+                user: user,
+                periodScore: periodScore,
+                details: scoreDetails
+            });
+        }
+    }
+    
+    // 按分数降序排列，取前10
+    periodResults.sort(function(a, b) {
+        return b.periodScore - a.periodScore;
+    });
+    
+    var topResults = periodResults.slice(0, 10);
+    
+    console.log('最终月榜/周榜结果:', topResults);
+    
+    var html3 = '<div class="rank-section-title">' + (isMonth ? '📅 月榜（本月前10）' :
+        '📅 周榜（本周前10）') + '</div>';
+    
+    if (topResults.length === 0) {
+        html3 += '<p class="text-center text-gray-400 py-4">本月/本周暂无活跃用户</p>';
+    } else {
+        for (var q = 0; q < topResults.length; q++) {
+            var item = topResults[q];
+            var u3 = item.user;
+            var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
+            var isMe = currentUser && u3.name === currentUser.name;
+            html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' + 
+                    (isMe ? ' border-2 border-primary' : '') + '">' +
+                '<div><span class="font-bold text-primary">' + medal4 + '</span>' +
+                '<span class="ml-2 font-medium">' + u3.name + '</span>' +
+                '<span class="text-gray-400 text-xs ml-1">(' + (u3.unit || '未分配') + ')</span>' +
+                (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
+                '</div>' +
+                '<span class="font-bold text-success">' + item.periodScore + '分</span>' +
+                '</div>';
+        }
+    }
+    rankBox.innerHTML = html3;
                 }
                 hideLoading();
             } catch (error) {
