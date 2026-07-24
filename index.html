@@ -584,6 +584,7 @@
                 challengeUsed: user.challenge_used || user.challengeUsed || 0,
                 rankHistory: user.rankHistory || [],
                 challengeHistory: user.challengeHistory || [],
+                version: user.version || 1,
                 created_at: user.created_at,
                 updated_at: user.updated_at
             };
@@ -927,40 +928,57 @@
         }
 
         // ============================================================
-        //  保存用户数据到云端
+        //  【核心修复】保存用户数据到云端 - 添加版本号和ID
         // ============================================================
         async function saveUserToCloud(user) {
             try {
                 var userData = {
+                    id: user.id,
                     name: user.name,
                     unit: user.unit,
                     warmupScore: user.warmupScore || 0,
                     warmupDate: user.warmupDate || '',
                     rankScore: user.rankScore || 0,
-                    rankRemain: user.rankRemain || 3,
                     rankDaily: user.rankDaily || { date: '', used: 0 },
                     rankHistory: user.rankHistory || [],
                     challengeScore: user.challengeScore || 0,
                     challengeDate: user.challengeDate || '',
                     challengeUsed: user.challengeUsed || 0,
                     challengeHistory: user.challengeHistory || [],
-                    totalScore: user.totalScore || 0
+                    totalScore: user.totalScore || 0,
+                    version: user.version || 1
                 };
 
                 var result = await apiCall('/save', 'POST', { name: user.name, userData: userData });
+
+                if (result && result.error) {
+                    if (result.code === 'CONFLICT') {
+                        alert('检测到数据冲突，请重新登录以获取最新数据');
+                        logoutUser();
+                        showPage('loginPage');
+                        return null;
+                    }
+                    throw new Error(result.error);
+                }
 
                 if (result && result.user) {
                     var updated = normalizeUser(result.user);
                     if (currentUser) {
                         updated.rankDaily = currentUser.rankDaily || { date: new Date().toDateString(), used: 0 };
                         updated.rankRemain = currentUser.rankRemain !== undefined ? currentUser.rankRemain : 3;
-                        updated.rankHistory = currentUser.rankHistory || [];
+                        if (!updated.rankHistory || updated.rankHistory.length === 0) {
+                            updated.rankHistory = currentUser.rankHistory || [];
+                        }
+                        if (!updated.challengeHistory || updated.challengeHistory.length === 0) {
+                            updated.challengeHistory = currentUser.challengeHistory || [];
+                        }
                     }
                     currentUser = updated;
+                    setStorage('currentUser', currentUser);
+                    await updateUserCache();
+                    return result;
                 }
 
-                setStorage('currentUser', currentUser);
-                await updateUserCache();
                 return result;
             } catch (error) {
                 console.error('保存失败:', error);
@@ -1190,13 +1208,12 @@
             for (var i = 0; i < allOpt.length; i++) { allOpt[i].onclick = null; }
 
             var cfg = getAdminConfig();
-            var addScore = 0;
+            var addScore = 10;
             var comboBonus = 0;
 
             if (isRight) {
                 dom.classList.remove('border-gray-300');
                 dom.classList.add('border-success', 'bg-green-50');
-                addScore = 10;
 
                 if (cfg.combo && (currentMode === 'ranked' || currentMode === 'challenge')) {
                     comboCount++;
@@ -1321,6 +1338,7 @@
                 console.log('✅ 用户数据已保存到云端');
             } catch (e) {
                 console.error('❌ 保存失败:', e);
+                alert('数据保存失败，请检查网络后重试');
             }
 
             document.getElementById('resName').textContent = currentUser.name;
