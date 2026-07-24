@@ -830,14 +830,7 @@
             header.classList.remove('compact');
             el.classList.remove('quiz-mode');
         }
-        if (pageId === 'rankPage') {
-            // 先获取数据再渲染排行榜
-            fetchAllUsers().then(function() {
-                renderRank();
-            }).catch(function() {
-                renderRank();
-            });
-        }
+        if (pageId === 'rankPage') renderRank();
         if (pageId === 'adminPage') renderAdminData();
         if (pageId === 'mainPage') updateMainUI();
     }
