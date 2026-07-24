@@ -559,6 +559,13 @@
             if (user.warmupScore !== undefined && user.rankScore !== undefined) {
                 return user;
             }
+            // 兼容下划线格式
+            var rankDaily = user.rankDaily || null;
+            if (!rankDaily && user.rank_daily) {
+                try {
+                    rankDaily = typeof user.rank_daily === 'string' ? JSON.parse(user.rank_daily) : user.rank_daily;
+                } catch(e) { rankDaily = null; }
+            }
             return {
                 id: user.id,
                 name: user.name,
@@ -567,11 +574,11 @@
                 warmupDate: user.warmup_date || user.warmupDate || '',
                 rankScore: user.rank_score || user.rankScore || 0,
                 rankRemain: user.rank_remain || user.rankRemain || 3,
+                rankDaily: rankDaily || { date: '', used: 0 },
                 challengeScore: user.challenge_score || user.challengeScore || 0,
                 challengeDate: user.challenge_date || user.challengeDate || '',
                 totalScore: user.total_score || user.totalScore || 0,
                 challengeUsed: user.challenge_used || user.challengeUsed || 0,
-                rankDaily: user.rankDaily || { date: '', used: 0 },
                 rankHistory: user.rankHistory || [],
                 challengeHistory: user.challengeHistory || [],
                 created_at: user.created_at,
@@ -650,21 +657,48 @@
         }
 
         // ============================================================
-        //  保存用户数据到云端
+        //  保存用户数据到云端 - 【修复版】确保 rankDaily 完整保存
         // ============================================================
         async function saveUserToCloud(user) {
             try {
-                var result = await apiCall('/save', 'POST', { name: user.name, userData: user });
+                // 构建完整的用户数据对象
+                var userData = {
+                    name: user.name,
+                    unit: user.unit,
+                    warmupScore: user.warmupScore || 0,
+                    warmupDate: user.warmupDate || '',
+                    rankScore: user.rankScore || 0,
+                    rankRemain: user.rankRemain || 3,
+                    rankDaily: user.rankDaily || { date: '', used: 0 },
+                    rankHistory: user.rankHistory || [],
+                    challengeScore: user.challengeScore || 0,
+                    challengeDate: user.challengeDate || '',
+                    challengeUsed: user.challengeUsed || 0,
+                    challengeHistory: user.challengeHistory || [],
+                    totalScore: user.totalScore || 0
+                };
+                
+                var result = await apiCall('/save', 'POST', { name: user.name, userData: userData });
                 
                 if (result && result.user) {
                     var updated = normalizeUser(result.user);
                     if (currentUser) {
-                        updated.rankDaily = currentUser.rankDaily || { date: '', used: 0 };
-                        updated.rankRemain = currentUser.rankRemain || 3;
+                        // 保留本地 rankDaily 数据（防止服务器覆盖）
+                        if (currentUser.rankDaily) {
+                            updated.rankDaily = currentUser.rankDaily;
+                        }
+                        if (currentUser.rankRemain !== undefined) {
+                            updated.rankRemain = currentUser.rankRemain;
+                        }
+                        if (currentUser.rankHistory) {
+                            updated.rankHistory = currentUser.rankHistory;
+                        }
                     }
                     currentUser = updated;
                 }
                 
+                // 本地缓存备份
+                setStorage('currentUser', currentUser);
                 await updateUserCache();
                 return result;
             } catch (error) {
@@ -862,7 +896,7 @@
         }
 
         // ============================================================
-        //  用户数据管理 - 最终修复版（排位赛次数限制）
+        //  用户数据管理 - 【完全修复版】排位赛次数限制
         // ============================================================
         function checkDailyReset(user) {
             if (!user) return;
@@ -876,14 +910,22 @@
                 return;
             }
             
+            // 确保 rankDaily.date 存在
+            if (!user.rankDaily.date) {
+                user.rankDaily.date = today;
+                user.rankDaily.used = 0;
+                user.rankRemain = 3;
+                console.log('🆕 修复排位赛日期数据');
+                return;
+            }
+            
             // 判断是否新的一天
             if (user.rankDaily.date !== today) {
-                // 新的一天：重置次数
                 user.rankDaily = { date: today, used: 0 };
                 user.rankRemain = 3;
                 console.log('🔄 新的一天，排位赛次数已重置');
             } else {
-                // ✅ 同一天：根据已使用次数计算剩余
+                // 同一天：根据已使用次数计算剩余
                 var used = parseInt(user.rankDaily.used) || 0;
                 user.rankRemain = Math.max(0, 3 - used);
                 console.log('📊 今日已用排位赛 ' + used + ' 次，剩余 ' + user.rankRemain + ' 次');
@@ -950,7 +992,7 @@
         }
 
         // ============================================================
-        //  进入赛制
+        //  进入赛制 - 【修复版】增加数据完整性检查
         // ============================================================
         function enterMode(mode) {
             if (!currentUser) {
@@ -963,14 +1005,27 @@
                 return;
             }
             
+            // 先执行每日重置检查
             checkDailyReset(currentUser);
             updateTotalScore(currentUser);
             
             if (mode === 'ranked') {
-                if ((currentUser.rankRemain || 0) <= 0) {
-                    alert('⛔ 今日排位赛次数已用完（共3次），请明天再来！');
-                    updateMainUI();
-                    return;
+                // 检查剩余次数
+                var remain = parseInt(currentUser.rankRemain) || 0;
+                if (remain <= 0) {
+                    // 双重检查：如果剩余为0但 used < 3，修复数据
+                    var used = parseInt(currentUser.rankDaily?.used) || 0;
+                    if (used < 3) {
+                        currentUser.rankRemain = 3 - used;
+                        setStorage('currentUser', currentUser);
+                        updateMainUI();
+                        remain = currentUser.rankRemain;
+                    }
+                    if (remain <= 0) {
+                        alert('⛔ 今日排位赛次数已用完（共3次），请明天再来！');
+                        updateMainUI();
+                        return;
+                    }
                 }
             }
             if (mode === 'challenge') {
@@ -1191,7 +1246,7 @@
         }
 
         // ============================================================
-        //  答题结束 - 排位赛次数累加（最终修复版）
+        //  答题结束 - 【完全修复版】排位赛次数累加
         // ============================================================
         async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
@@ -1212,24 +1267,32 @@
                     currentUser.warmupScore = Math.max(currentUser.warmupScore || 0, userScore);
                 }
             } else if (mode === 'ranked') {
-                // ✅ 确保 rankDaily 存在
+                // 确保 rankDaily 存在且格式正确
                 if (!currentUser.rankDaily || typeof currentUser.rankDaily !== 'object') {
                     currentUser.rankDaily = { date: today, used: 0 };
                 }
                 
-                // ✅ 如果是新的一天，重置
+                // 如果是新的一天，重置
                 if (currentUser.rankDaily.date !== today) {
                     currentUser.rankDaily = { date: today, used: 1 };
                 } else {
-                    // ✅ 同一天，使用次数 +1
-                    currentUser.rankDaily.used = (parseInt(currentUser.rankDaily.used) || 0) + 1;
+                    // 同一天，使用次数 +1（确保不超过3次）
+                    var currentUsed = parseInt(currentUser.rankDaily.used) || 0;
+                    if (currentUsed >= 3) {
+                        // 理论上不会发生，因为入口已拦截
+                        alert('今日排位赛次数已用完！');
+                        showPage('mainPage');
+                        updateMainUI();
+                        return;
+                    }
+                    currentUser.rankDaily.used = currentUsed + 1;
                 }
                 
-                // ✅ 计算剩余次数（确保不超过3次）
+                // 计算剩余次数
                 var usedCount = parseInt(currentUser.rankDaily.used) || 0;
                 currentUser.rankRemain = Math.max(0, 3 - usedCount);
                 
-                // ✅ 更新最高分（仅当本次得分更高）
+                // 更新最高分
                 if (userScore > (currentUser.rankScore || 0)) {
                     currentUser.rankScore = userScore;
                 }
@@ -1237,6 +1300,7 @@
                 // 保存历史记录
                 if (!currentUser.rankHistory) currentUser.rankHistory = [];
                 currentUser.rankHistory.push({ date: today, score: userScore });
+                
                 console.log('✅ 排位赛已保存: 今日已用 ' + currentUser.rankDaily.used + ' 次，剩余 ' + currentUser.rankRemain + ' 次');
                 
             } else if (mode === 'challenge') {
@@ -1256,6 +1320,8 @@
                 console.log('✅ 用户数据已保存到云端');
             } catch (e) {
                 console.error('❌ 保存失败:', e);
+                // 本地保存作为备份
+                setStorage('currentUser', currentUser);
             }
 
             document.getElementById('resName').textContent = currentUser.name;
@@ -1310,10 +1376,8 @@
         }
 
         // ============================================================
-        //  排行榜（完全修复版 - 月榜/周榜正确统计个人总积分）
-        //  修复：确保排位赛分数正确累加
+        //  排行榜
         // ============================================================
-        
         var cachedUsers = [];
         var cachedTeamRanking = [];
 
@@ -1494,7 +1558,6 @@
                 }
 
                 if (rankFilter === 'total') {
-                    // ===== 个人总积分排行 =====
                     var sorted = list.slice().sort(function(a, b) { 
                         return (b.totalScore || 0) - (a.totalScore || 0); 
                     });
@@ -1520,7 +1583,6 @@
                     }
                     rankBox.innerHTML = html;
 
-                    // ===== 战队总积分排行 =====
                     var teamHtml = '<div class="rank-section-title">🏢 战队总积分排行</div>';
                     if (teamRanking.length === 0) {
                         teamHtml += '<p class="text-center text-gray-400 py-2">暂无战队数据</p>';
@@ -1544,7 +1606,6 @@
                     teamTotalRank.classList.remove('hidden');
 
                 } else if (rankFilter === 'unit') {
-                    // ===== 战队内部成员排行 =====
                     teamTotalRank.classList.add('hidden');
                     
                     populateTeamSelector();
@@ -1595,10 +1656,6 @@
                     rankBox.innerHTML = html2;
 
                 } else {
-                    // ============================================================
-                    //  【完全修复】月榜/周榜 - 正确统计个人总积分
-                    //  关键修复：排位赛分数正确累加
-                    // ============================================================
                     teamTotalRank.classList.add('hidden');
                     
                     var now = new Date();
@@ -1618,7 +1675,6 @@
                         periodLabel = '本周';
                     }
                     
-                    // 计算每个用户在时间段内的总得分
                     var periodResults = [];
                     
                     for (var uIdx = 0; uIdx < list.length; uIdx++) {
@@ -1630,7 +1686,6 @@
                         var rankScoreTotal = 0;
                         var challengeScoreTotal = 0;
                         
-                        // 1. 热身赛 - 使用 warmupScore 和 warmupDate
                         if (user.warmupDate && user.warmupScore > 0) {
                             try {
                                 var warmupDate = new Date(user.warmupDate);
@@ -1643,10 +1698,7 @@
                             } catch(e) {}
                         }
                         
-                        // 2. 【关键修复】排位赛 - 正确累加 rankHistory 中的所有记录
-                        // 即使 rankHistory 为空，也检查 rankScore 是否在周期内获得
                         if (user.rankHistory && Array.isArray(user.rankHistory) && user.rankHistory.length > 0) {
-                            // 有历史记录，遍历累加
                             for (var r = 0; r < user.rankHistory.length; r++) {
                                 try {
                                     var rankEntry = user.rankHistory[r];
@@ -1661,8 +1713,6 @@
                                 } catch(e) {}
                             }
                         } else if (user.rankScore > 0) {
-                            // 没有历史记录但有最高分，说明可能是旧数据或单次记录
-                            // 检查 rankDate 或 rankDaily 的日期
                             var rankDateCheck = false;
                             if (user.rankDaily && user.rankDaily.date) {
                                 try {
@@ -1683,7 +1733,6 @@
                             scoreDetails.push('排位+' + rankScoreTotal);
                         }
                         
-                        // 3. 挑战赛 - 使用 challengeScore 并检查 challengeHistory
                         if (user.challengeHistory && Array.isArray(user.challengeHistory) && user.challengeHistory.length > 0) {
                             for (var c = 0; c < user.challengeHistory.length; c++) {
                                 try {
@@ -1699,7 +1748,6 @@
                                 } catch(e) {}
                             }
                         } else if (user.challengeScore > 0) {
-                            // 没有历史记录但有最高分，检查 challengeDate
                             if (user.challengeDate) {
                                 try {
                                     var challengeDate = new Date(user.challengeDate);
@@ -1716,7 +1764,6 @@
                             scoreDetails.push('挑战+' + challengeScoreTotal);
                         }
                         
-                        // 如果有活动，加入榜单（即使得分为0也加入，以便显示）
                         if (hasActivity) {
                             periodResults.push({
                                 user: user,
@@ -1726,7 +1773,6 @@
                         }
                     }
                     
-                    // 按周期总得分降序排列，取前10
                     periodResults.sort(function(a, b) {
                         return b.periodScore - a.periodScore;
                     });
@@ -1768,7 +1814,6 @@
             }
         }
 
-        // 更新用户缓存
         async function updateUserCache() {
             try {
                 var result = await fetchAllUsersWithRetry();
