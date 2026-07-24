@@ -862,16 +862,17 @@
         }
 
         // ============================================================
-        //  用户数据管理 - 修复版
+        //  用户数据管理 - 最终修复版（排位赛次数限制）
         // ============================================================
         function checkDailyReset(user) {
             if (!user) return;
             var today = new Date().toDateString();
             
-            // 初始化 rankDaily
-            if (!user.rankDaily) {
+            // 初始化 rankDaily（新用户或数据损坏）
+            if (!user.rankDaily || typeof user.rankDaily !== 'object') {
                 user.rankDaily = { date: today, used: 0 };
                 user.rankRemain = 3;
+                console.log('🆕 初始化排位赛数据');
                 return;
             }
             
@@ -883,7 +884,7 @@
                 console.log('🔄 新的一天，排位赛次数已重置');
             } else {
                 // ✅ 同一天：根据已使用次数计算剩余
-                var used = user.rankDaily.used || 0;
+                var used = parseInt(user.rankDaily.used) || 0;
                 user.rankRemain = Math.max(0, 3 - used);
                 console.log('📊 今日已用排位赛 ' + used + ' 次，剩余 ' + user.rankRemain + ' 次');
             }
@@ -967,7 +968,7 @@
             
             if (mode === 'ranked') {
                 if ((currentUser.rankRemain || 0) <= 0) {
-                    alert('今日排位赛次数已用完，请明天再来！');
+                    alert('⛔ 今日排位赛次数已用完（共3次），请明天再来！');
                     updateMainUI();
                     return;
                 }
@@ -975,7 +976,7 @@
             if (mode === 'challenge') {
                 checkChallengeReset(currentUser);
                 if ((currentUser.challengeUsed || 0) >= 1) {
-                    alert('今日挑战赛已参加，请明天再来！');
+                    alert('⛔ 今日挑战赛已参加（每日1次），请明天再来！');
                     updateMainUI();
                     return;
                 }
@@ -1190,7 +1191,7 @@
         }
 
         // ============================================================
-        //  答题结束 - 修复排位赛次数累加
+        //  答题结束 - 排位赛次数累加（最终修复版）
         // ============================================================
         async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
@@ -1212,7 +1213,7 @@
                 }
             } else if (mode === 'ranked') {
                 // ✅ 确保 rankDaily 存在
-                if (!currentUser.rankDaily) {
+                if (!currentUser.rankDaily || typeof currentUser.rankDaily !== 'object') {
                     currentUser.rankDaily = { date: today, used: 0 };
                 }
                 
@@ -1221,11 +1222,12 @@
                     currentUser.rankDaily = { date: today, used: 1 };
                 } else {
                     // ✅ 同一天，使用次数 +1
-                    currentUser.rankDaily.used = (currentUser.rankDaily.used || 0) + 1;
+                    currentUser.rankDaily.used = (parseInt(currentUser.rankDaily.used) || 0) + 1;
                 }
                 
-                // ✅ 计算剩余次数
-                currentUser.rankRemain = Math.max(0, 3 - currentUser.rankDaily.used);
+                // ✅ 计算剩余次数（确保不超过3次）
+                var usedCount = parseInt(currentUser.rankDaily.used) || 0;
+                currentUser.rankRemain = Math.max(0, 3 - usedCount);
                 
                 // ✅ 更新最高分（仅当本次得分更高）
                 if (userScore > (currentUser.rankScore || 0)) {
