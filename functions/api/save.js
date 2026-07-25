@@ -20,10 +20,14 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
         const now = new Date().toISOString();
-        const today = new Date().toDateString();
+        const today = new Date().toISOString().split('T')[0];
 
+        // 获取当前用户信息
         const user = await db.prepare(`
-            SELECT id, version, daily_score, daily_score_date FROM users WHERE name = ?
+            SELECT id, version, daily_score, daily_score_date, 
+                   today_warmup_score, today_rank_score, today_challenge_score,
+                   total_score
+            FROM users WHERE name = ?
         `).bind(name).first();
 
         if (!user) {
@@ -40,40 +44,29 @@ export async function onRequest(context) {
             }), { status: 409, headers });
         }
 
-        // 计算本次新增的积分（从各个模式获得的总分）
-        let newDailyScore = 0;
-        let newTotalScore = 0;
+        // 提取前端传来的今日各模式得分（若未传则使用当前数据库值）
+        let todayWarmup = userData.todayWarmupScore !== undefined ? userData.todayWarmupScore : user.today_warmup_score;
+        let todayRank = userData.todayRankScore !== undefined ? userData.todayRankScore : user.today_rank_score;
+        let todayChallenge = userData.todayChallengeScore !== undefined ? userData.todayChallengeScore : user.today_challenge_score;
 
-        // 计算各模式得分
-        const warmupScore = userData.warmupScore || 0;
-        const rankScore = userData.rankScore || 0;
-        const challengeScore = userData.challengeScore || 0;
-        
-        // 当日总积分 = 热身 + 排位 + 挑战
-        newDailyScore = warmupScore + rankScore + challengeScore;
-        
-        // 计算历史累计总积分
-        // 获取当前用户的总积分
-        const currentUser = await db.prepare(`
-            SELECT total_score FROM users WHERE id = ?
-        `).bind(userId).first();
-        
-        // 如果今日积分已重置，则新的总积分 = 原有总积分 + 今日得分
-        // 否则总积分不变（因为已经累加过了）
-        if (userData.daily_score_date === today) {
-            // 如果当前存储的每日积分日期与请求一致，说明是同一日内的更新
-            // 计算增量
-            const oldDailyScore = user.daily_score || 0;
-            const deltaScore = newDailyScore - oldDailyScore;
-            newTotalScore = (currentUser.total_score || 0) + deltaScore;
+        // 计算新的每日积分
+        const newDailyScore = todayWarmup + todayRank + todayChallenge;
+
+        // 计算历史总积分增量
+        let deltaTotal = 0;
+        if (user.daily_score_date === today) {
+            // 同一天内更新，增量 = 新每日积分 - 旧每日积分
+            deltaTotal = newDailyScore - (user.daily_score || 0);
         } else {
             // 新的一天，直接累加
-            newTotalScore = (currentUser.total_score || 0) + newDailyScore;
+            deltaTotal = newDailyScore;
         }
+        const newTotalScore = (user.total_score || 0) + deltaTotal;
 
+        // 构建批量更新语句
         const statements = [];
 
-        // 1. 更新用户主表 - 包含每日积分和历史累计积分
+        // 1. 更新用户主表（包含今日各模式得分和每日积分、总积分）
         statements.push(
             db.prepare(`
                 UPDATE users SET
@@ -82,23 +75,29 @@ export async function onRequest(context) {
                     rank_score = ?,
                     challenge_score = ?,
                     challenge_date = ?,
+                    challenge_used = ?,
+                    today_warmup_score = ?,
+                    today_rank_score = ?,
+                    today_challenge_score = ?,
                     daily_score = ?,
                     daily_score_date = ?,
                     total_score = ?,
-                    challenge_used = ?,
                     version = version + 1,
                     updated_at = ?
                 WHERE name = ?
             `).bind(
-                warmupScore,
+                userData.warmupScore || 0,
                 userData.warmupDate || '',
-                rankScore,
-                challengeScore,
+                userData.rankScore || 0,
+                userData.challengeScore || 0,
                 userData.challengeDate || '',
+                userData.challengeUsed || 0,
+                todayWarmup,
+                todayRank,
+                todayChallenge,
                 newDailyScore,
                 today,
                 newTotalScore,
-                userData.challengeUsed || 0,
                 now,
                 name
             )
@@ -158,8 +157,11 @@ export async function onRequest(context) {
             await db.batch(statements);
         }
 
+        // 返回更新后的用户数据
         const updatedUser = await db.prepare(`
-            SELECT id, name, unit, warmup_score, rank_score, challenge_score, 
+            SELECT id, name, unit, 
+                   warmup_score, rank_score, challenge_score,
+                   today_warmup_score, today_rank_score, today_challenge_score,
                    daily_score, daily_score_date, total_score,
                    warmup_date, challenge_date, challenge_used, version, created_at, updated_at
             FROM users WHERE name = ?

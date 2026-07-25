@@ -21,7 +21,9 @@ export async function onRequest(context) {
         const db = env.D1_DB;
 
         const user = await db.prepare(`
-            SELECT id, name, unit, pwd, warmup_score, rank_score, challenge_score, 
+            SELECT id, name, unit, pwd, 
+                   warmup_score, rank_score, challenge_score,
+                   today_warmup_score, today_rank_score, today_challenge_score,
                    daily_score, daily_score_date, total_score,
                    warmup_date, challenge_date, challenge_used, version, created_at
             FROM users WHERE name = ?
@@ -35,8 +37,27 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '密码错误' }), { status: 401, headers });
         }
 
-        const today = new Date().toDateString();
-        
+        const today = new Date().toISOString().split('T')[0]; // UTC日期
+
+        // 如果每日积分日期不是今天，重置今日各模式得分和每日积分
+        if (user.daily_score_date !== today) {
+            user.daily_score = 0;
+            user.daily_score_date = today;
+            user.today_warmup_score = 0;
+            user.today_rank_score = 0;
+            user.today_challenge_score = 0;
+            await db.prepare(`
+                UPDATE users SET 
+                    daily_score = 0, 
+                    daily_score_date = ?, 
+                    today_warmup_score = 0,
+                    today_rank_score = 0,
+                    today_challenge_score = 0
+                WHERE id = ?
+            `).bind(today, user.id).run();
+        }
+
+        // 获取排位赛今日使用次数
         let rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
         `).bind(user.id, today).first();
@@ -51,15 +72,6 @@ export async function onRequest(context) {
         const used = rankDaily.used || 0;
         user.rank_remain = Math.max(0, 3 - used);
         user.rankDaily = { date: today, used: used };
-
-        // 检查每日积分是否需要重置
-        if (user.daily_score_date !== today) {
-            user.daily_score = 0;
-            user.daily_score_date = today;
-            await db.prepare(`
-                UPDATE users SET daily_score = 0, daily_score_date = ? WHERE id = ?
-            `).bind(today, user.id).run();
-        }
 
         delete user.pwd;
 
