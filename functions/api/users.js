@@ -10,24 +10,34 @@ export async function onRequest(context) {
         const db = env.D1_DB;
 
         const users = await db.prepare(`
-            SELECT id, name, unit, warmup_score, rank_score, challenge_score, total_score,
-                   warmup_date, challenge_date, challenge_used, version, created_at
+            SELECT id, name, unit, 
+                   daily_warmup_score, daily_rank_score, daily_challenge_score, daily_total_score, daily_date,
+                   total_warmup_score, total_rank_score, total_challenge_score, total_total_score,
+                   warmup_score, warmup_date, rank_score, challenge_score, challenge_date,
+                   total_score, challenge_used, version, created_at
             FROM users
-            ORDER BY total_score DESC
+            ORDER BY total_total_score DESC, daily_total_score DESC
         `).all();
 
         const results = users.results || [];
-        // ✅ 使用 UTC 日期
         const today = new Date().toISOString().split('T')[0];
 
         for (const user of results) {
+            // 处理每日积分重置
+            if (user.daily_date !== today) {
+                user.daily_warmup_score = 0;
+                user.daily_rank_score = 0;
+                user.daily_challenge_score = 0;
+                user.daily_total_score = 0;
+                user.daily_date = today;
+            }
+
             // 从云端查询今日排位赛已用次数
             let rankDaily = await db.prepare(`
                 SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
             `).bind(user.id, today).first();
             
             if (!rankDaily) {
-                // ✅ 没有记录则创建
                 await db.prepare(`
                     INSERT INTO rank_daily (user_id, date, used) VALUES (?, ?, 0)
                 `).bind(user.id, today).run();

@@ -20,7 +20,6 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
         const now = new Date().toISOString();
-        // ✅ 使用 UTC 日期
         const today = new Date().toISOString().split('T')[0];
 
         // 获取用户ID和版本号
@@ -35,7 +34,7 @@ export async function onRequest(context) {
         const userId = user.id;
         const currentVersion = user.version || 1;
 
-        // 检查版本号，防止并发覆盖
+        // 检查版本号
         if (userData.version && userData.version !== currentVersion) {
             return new Response(JSON.stringify({ 
                 error: '数据已被其他操作修改，请刷新后重试',
@@ -46,10 +45,22 @@ export async function onRequest(context) {
         // 构建事务语句
         const statements = [];
 
-        // 1. 更新用户主表
+        // 1. 更新用户主表（包含双轨制积分字段）
         statements.push(
             db.prepare(`
                 UPDATE users SET
+                    -- 每日积分
+                    daily_warmup_score = ?,
+                    daily_rank_score = ?,
+                    daily_challenge_score = ?,
+                    daily_total_score = ?,
+                    daily_date = ?,
+                    -- 历史总积分
+                    total_warmup_score = ?,
+                    total_rank_score = ?,
+                    total_challenge_score = ?,
+                    total_total_score = ?,
+                    -- 原有字段（兼容）
                     warmup_score = ?,
                     warmup_date = ?,
                     rank_score = ?,
@@ -61,6 +72,18 @@ export async function onRequest(context) {
                     updated_at = ?
                 WHERE name = ?
             `).bind(
+                // 每日积分
+                userData.dailyWarmupScore || 0,
+                userData.dailyRankScore || 0,
+                userData.dailyChallengeScore || 0,
+                userData.dailyTotalScore || 0,
+                userData.dailyDate || today,
+                // 历史总积分
+                userData.totalWarmupScore || 0,
+                userData.totalRankScore || 0,
+                userData.totalChallengeScore || 0,
+                userData.totalTotalScore || 0,
+                // 原有字段
                 userData.warmupScore || 0,
                 userData.warmupDate || '',
                 userData.rankScore || 0,
@@ -73,10 +96,9 @@ export async function onRequest(context) {
             )
         );
 
-        // 2. 更新排位赛每日记录 - 使用 UPSERT
+        // 2. 更新排位赛每日记录
         if (userData.rankDaily && userData.rankDaily.used !== undefined) {
             const used = userData.rankDaily.used || 0;
-            // ✅ 使用 UTC 日期
             const dailyDate = userData.rankDaily.date || today;
             statements.push(
                 db.prepare(`
@@ -132,12 +154,15 @@ export async function onRequest(context) {
 
         // 获取更新后的用户数据
         const updatedUser = await db.prepare(`
-            SELECT id, name, unit, warmup_score, rank_score, challenge_score, total_score,
-                   warmup_date, challenge_date, challenge_used, version, created_at, updated_at
+            SELECT id, name, unit, 
+                   daily_warmup_score, daily_rank_score, daily_challenge_score, daily_total_score, daily_date,
+                   total_warmup_score, total_rank_score, total_challenge_score, total_total_score,
+                   warmup_score, warmup_date, rank_score, challenge_score, challenge_date,
+                   total_score, challenge_used, version, created_at, updated_at
             FROM users WHERE name = ?
         `).bind(name).first();
 
-        // ✅ 获取最新的排位赛数据（使用 UTC 日期）
+        // 获取最新的排位赛数据
         const rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
         `).bind(userId, today).first();
