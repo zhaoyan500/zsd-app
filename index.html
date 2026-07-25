@@ -25,6 +25,7 @@
         }
     </script>
     <style>
+        /* ... 样式保持不变 ... */
         .page { display: none !important; min-height: 100vh; padding-top: 100px; padding-bottom: 60px; }
         .page.active { display: block !important; }
         .page.quiz-mode { padding-top: 60px; padding-bottom: 50px; }
@@ -120,6 +121,7 @@
 </head>
 <body>
 
+    <!-- HTML 结构保持不变 -->
     <div id="loadingOverlay" class="loading-overlay">
         <div class="loading-spinner"></div>
         <span>加载中...</span>
@@ -302,7 +304,6 @@
                 </div>
             </div>
 
-            <!-- 排行榜按钮 -->
             <div class="mt-5 flex justify-center">
                 <button onclick="showPage('rankPage')" class="w-full max-w-xs bg-white rounded-xl shadow p-4 text-center border-2 border-primary hover:bg-primary hover:text-white transition-colors duration-200">
                     <i class="fa fa-trophy text-3xl text-yellow-500"></i>
@@ -623,6 +624,18 @@
         function normalizeUser(user) {
             if (!user) return null;
 
+            // ✅ 使用 !== undefined 判断，避免 0 被误判
+            var dailyWarmupScore = user.daily_warmup_score !== undefined ? user.daily_warmup_score : 0;
+            var dailyRankScore = user.daily_rank_score !== undefined ? user.daily_rank_score : 0;
+            var dailyChallengeScore = user.daily_challenge_score !== undefined ? user.daily_challenge_score : 0;
+            var dailyTotalScore = user.daily_total_score !== undefined ? user.daily_total_score : 0;
+            var dailyDate = user.daily_date || '';
+
+            var totalWarmupScore = user.total_warmup_score !== undefined ? user.total_warmup_score : 0;
+            var totalRankScore = user.total_rank_score !== undefined ? user.total_rank_score : 0;
+            var totalChallengeScore = user.total_challenge_score !== undefined ? user.total_challenge_score : 0;
+            var totalTotalScore = user.total_total_score !== undefined ? user.total_total_score : 0;
+
             var normalized = {
                 id: user.id,
                 name: user.name,
@@ -631,20 +644,17 @@
                 created_at: user.created_at,
                 updated_at: user.updated_at,
 
-                // ✅ 每日积分（独立存储）
-                dailyWarmupScore: user.daily_warmup_score !== undefined ? user.daily_warmup_score : 0,
-                dailyRankScore: user.daily_rank_score !== undefined ? user.daily_rank_score : 0,
-                dailyChallengeScore: user.daily_challenge_score !== undefined ? user.daily_challenge_score : 0,
-                dailyTotalScore: user.daily_total_score !== undefined ? user.daily_total_score : 0,
-                dailyDate: user.daily_date || '',
+                dailyWarmupScore: dailyWarmupScore,
+                dailyRankScore: dailyRankScore,
+                dailyChallengeScore: dailyChallengeScore,
+                dailyTotalScore: dailyTotalScore,
+                dailyDate: dailyDate,
 
-                // ✅ 历史总积分（独立存储，永久累加）
-                totalWarmupScore: user.total_warmup_score !== undefined ? user.total_warmup_score : 0,
-                totalRankScore: user.total_rank_score !== undefined ? user.total_rank_score : 0,
-                totalChallengeScore: user.total_challenge_score !== undefined ? user.total_challenge_score : 0,
-                totalTotalScore: user.total_total_score !== undefined ? user.total_total_score : 0,
+                totalWarmupScore: totalWarmupScore,
+                totalRankScore: totalRankScore,
+                totalChallengeScore: totalChallengeScore,
+                totalTotalScore: totalTotalScore,
 
-                // ✅ 兼容字段（仅用于显示）
                 warmupScore: user.warmup_score || 0,
                 warmupDate: user.warmup_date || '',
                 rankScore: user.rank_score || 0,
@@ -658,18 +668,28 @@
                 challengeHistory: user.challengeHistory || []
             };
 
-            // ✅ 如果 dailyDate 不是今天，重置每日积分（不影响历史积分）
+            // ✅ 检查每日积分是否需要重置（只重置每日积分，历史积分保持不变）
             var today = DateUtils.getTodayUTC();
-            if (normalized.dailyDate !== today) {
+            if (normalized.dailyDate !== today && normalized.dailyDate !== '') {
                 normalized.dailyWarmupScore = 0;
                 normalized.dailyRankScore = 0;
                 normalized.dailyChallengeScore = 0;
                 normalized.dailyTotalScore = 0;
                 normalized.dailyDate = today;
+                console.log('📅 每日积分已重置:', normalized.name);
             }
 
-            // ✅ 显示总积分 = 每日积分 + 历史总积分（独立计算）
-            normalized.totalScore = (normalized.dailyTotalScore || 0) + (normalized.totalTotalScore || 0);
+            // ✅ 显示总积分 = 每日积分 + 历史总积分
+            normalized.totalScore = normalized.dailyTotalScore + normalized.totalTotalScore;
+
+            console.log('📊 normalizeUser:', {
+                name: normalized.name,
+                dailyTotal: normalized.dailyTotalScore,
+                totalTotal: normalized.totalTotalScore,
+                displayTotal: normalized.totalScore,
+                dailyDate: normalized.dailyDate,
+                today: today
+            });
 
             return normalized;
         }
@@ -1101,7 +1121,6 @@
 
                 var today = DateUtils.getTodayUTC();
 
-                // ✅ 检查每日积分是否需要重置（不影响历史积分）
                 if (currentUser.dailyDate !== today) {
                     currentUser.dailyWarmupScore = 0;
                     currentUser.dailyRankScore = 0;
@@ -1137,26 +1156,24 @@
         // ============================================================
         async function saveUserToCloud(user) {
             try {
+                // ✅ 确保所有字段都有值
                 var userData = {
                     id: user.id,
                     name: user.name,
                     unit: user.unit,
                     version: user.version || 1,
 
-                    // ✅ 每日积分（独立）
                     dailyWarmupScore: user.dailyWarmupScore || 0,
                     dailyRankScore: user.dailyRankScore || 0,
                     dailyChallengeScore: user.dailyChallengeScore || 0,
                     dailyTotalScore: user.dailyTotalScore || 0,
                     dailyDate: user.dailyDate || DateUtils.getTodayUTC(),
 
-                    // ✅ 历史总积分（独立）
                     totalWarmupScore: user.totalWarmupScore || 0,
                     totalRankScore: user.totalRankScore || 0,
                     totalChallengeScore: user.totalChallengeScore || 0,
                     totalTotalScore: user.totalTotalScore || 0,
 
-                    // ✅ 兼容字段（仅用于显示，使用每日积分）
                     warmupScore: user.dailyWarmupScore || 0,
                     warmupDate: user.dailyDate || '',
                     rankScore: user.dailyRankScore || 0,
@@ -1169,6 +1186,13 @@
                     rankHistory: user.rankHistory || [],
                     challengeHistory: user.challengeHistory || []
                 };
+
+                console.log('💾 保存数据:', {
+                    name: user.name,
+                    dailyTotal: userData.dailyTotalScore,
+                    totalTotal: userData.totalTotalScore,
+                    displayTotal: userData.totalScore
+                });
 
                 var result = await apiCall('/save', 'POST', { name: user.name, userData: userData });
 
@@ -1225,7 +1249,7 @@
         }
 
         // ============================================================
-        //  主界面更新
+        //  ✅ 修复：主界面更新
         // ============================================================
         function updateMainUI() {
             if (!currentUser) return;
@@ -1241,6 +1265,16 @@
                 currentUser.dailyDate = today;
             }
 
+            // ✅ 确保历史积分字段存在
+            currentUser.totalWarmupScore = currentUser.totalWarmupScore || 0;
+            currentUser.totalRankScore = currentUser.totalRankScore || 0;
+            currentUser.totalChallengeScore = currentUser.totalChallengeScore || 0;
+            currentUser.totalTotalScore = currentUser.totalTotalScore || 0;
+
+            // ✅ 计算显示总积分
+            var displayTotal = currentUser.dailyTotalScore + currentUser.totalTotalScore;
+            currentUser.totalScore = displayTotal;
+
             var displayScores = getDisplayScores(currentUser);
 
             document.getElementById('mainUserName').textContent = currentUser.name;
@@ -1250,9 +1284,16 @@
             document.getElementById('mainRank').textContent = displayScores.rank;
             document.getElementById('mainChallenge').textContent = displayScores.challenge;
 
-            document.getElementById('dailyTotalDisplay').textContent = currentUser.dailyTotalScore || 0;
-            document.getElementById('historyTotalDisplay').textContent = currentUser.totalTotalScore || 0;
-            document.getElementById('displayTotalDisplay').textContent = (currentUser.dailyTotalScore || 0) + (currentUser.totalTotalScore || 0);
+            document.getElementById('dailyTotalDisplay').textContent = currentUser.dailyTotalScore;
+            document.getElementById('historyTotalDisplay').textContent = currentUser.totalTotalScore;
+            document.getElementById('displayTotalDisplay').textContent = displayTotal;
+
+            console.log('📊 updateMainUI:', {
+                name: currentUser.name,
+                dailyTotal: currentUser.dailyTotalScore,
+                totalTotal: currentUser.totalTotalScore,
+                displayTotal: displayTotal
+            });
 
             var rankRemain = currentUser.rankRemain || 0;
             var rankUsed = 3 - rankRemain;
@@ -1561,7 +1602,7 @@
             var today = DateUtils.getTodayUTC();
             var mode = currentMode;
 
-            // 检查每日积分是否需要重置（不影响历史积分）
+            // 检查每日积分是否需要重置
             if (currentUser.dailyDate !== today) {
                 currentUser.dailyWarmupScore = 0;
                 currentUser.dailyRankScore = 0;
@@ -1570,17 +1611,18 @@
                 currentUser.dailyDate = today;
             }
 
+            // 确保历史积分字段存在
+            currentUser.totalWarmupScore = currentUser.totalWarmupScore || 0;
+            currentUser.totalRankScore = currentUser.totalRankScore || 0;
+            currentUser.totalChallengeScore = currentUser.totalChallengeScore || 0;
+            currentUser.totalTotalScore = currentUser.totalTotalScore || 0;
+
             // 双轨制积分独立累加
             if (mode === 'warmup') {
-                // 每日积分累加（今日有效）
                 currentUser.dailyWarmupScore = (currentUser.dailyWarmupScore || 0) + userScore;
-                // 历史总积分累加（永久有效）
                 currentUser.totalWarmupScore = (currentUser.totalWarmupScore || 0) + userScore;
-                // 更新每日总积分
                 currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore || 0) + (currentUser.dailyChallengeScore || 0);
-                // 更新历史总积分
                 currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore || 0) + (currentUser.totalChallengeScore || 0);
-                // 兼容字段（仅用于显示）
                 currentUser.warmupDate = today;
                 currentUser.warmupScore = currentUser.dailyWarmupScore;
 
@@ -1598,15 +1640,10 @@
                 currentUser.rankDaily = { date: today, used: result.used };
                 currentUser.rankRemain = result.remain;
 
-                // 每日积分累加（今日有效）
                 currentUser.dailyRankScore = (currentUser.dailyRankScore || 0) + userScore;
-                // 历史总积分累加（永久有效）
                 currentUser.totalRankScore = (currentUser.totalRankScore || 0) + userScore;
-                // 更新每日总积分
                 currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore || 0) + (currentUser.dailyChallengeScore || 0);
-                // 更新历史总积分
                 currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore || 0) + (currentUser.totalChallengeScore || 0);
-                // 兼容字段（仅用于显示）
                 currentUser.rankScore = currentUser.dailyRankScore;
 
                 if (!currentUser.rankHistory) currentUser.rankHistory = [];
@@ -1618,15 +1655,10 @@
                 currentUser.challengeDate = today;
                 currentUser.challengeUsed = (currentUser.challengeUsed || 0) + 1;
 
-                // 每日积分累加（今日有效）
                 currentUser.dailyChallengeScore = (currentUser.dailyChallengeScore || 0) + userScore;
-                // 历史总积分累加（永久有效）
                 currentUser.totalChallengeScore = (currentUser.totalChallengeScore || 0) + userScore;
-                // 更新每日总积分
                 currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore || 0) + (currentUser.dailyChallengeScore || 0);
-                // 更新历史总积分
                 currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore || 0) + (currentUser.totalChallengeScore || 0);
-                // 兼容字段（仅用于显示）
                 currentUser.challengeScore = currentUser.dailyChallengeScore;
 
                 if (!currentUser.challengeHistory) currentUser.challengeHistory = [];
@@ -1635,13 +1667,20 @@
                 console.log('🏆 挑战赛: +' + userScore + ' | 今日: ' + currentUser.dailyChallengeScore + ' | 历史: ' + currentUser.totalChallengeScore);
             }
 
-            // 显示总积分 = 每日积分 + 历史总积分（独立计算）
+            // 显示总积分 = 每日积分 + 历史总积分
             currentUser.totalScore = (currentUser.dailyTotalScore || 0) + (currentUser.totalTotalScore || 0);
+
+            console.log('📊 endQuiz 结果:', {
+                name: currentUser.name,
+                dailyTotal: currentUser.dailyTotalScore,
+                totalTotal: currentUser.totalTotalScore,
+                displayTotal: currentUser.totalScore
+            });
 
             // 保存到云端
             try {
                 await saveUserToCloud(currentUser);
-                console.log('✅ 保存成功 | 今日: ' + currentUser.dailyTotalScore + ' | 历史: ' + currentUser.totalTotalScore + ' | 显示: ' + currentUser.totalScore);
+                console.log('✅ 保存成功');
             } catch (e) {
                 console.error('❌ 保存失败:', e);
                 alert('数据保存失败，请检查网络后重试');
