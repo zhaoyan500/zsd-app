@@ -97,6 +97,9 @@
         .score-display-box { background: #f8f0f0; border-radius: 8px; padding: 8px 12px; margin: 4px 0; }
         .score-detail-row { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; border-bottom: 1px dashed #eee; }
         .score-detail-row:last-child { border-bottom: none; }
+        .score-detail-row .label { color: #666; }
+        .score-detail-row .value { font-weight: bold; }
+        .score-detail-row .value.primary { color: #c41e3a; }
         @media (max-width: 480px) {
             #globalHeader .title-line1 { font-size: 1.3rem; letter-spacing: 2px; }
             #globalHeader .title-line2 { font-size: 0.9rem; letter-spacing: 6px; }
@@ -241,16 +244,16 @@
                 </div>
                 <div id="scoreDetail" class="text-xs text-gray-600 mt-2 p-2 bg-gray-50 rounded-lg">
                     <div class="score-detail-row">
-                        <span>📅 今日积分</span>
-                        <span><b id="dailyTotalDisplay">0</b> 分</span>
+                        <span class="label">📅 今日积分</span>
+                        <span class="value" id="dailyTotalDisplay">0</span>
                     </div>
                     <div class="score-detail-row">
-                        <span>🏛️ 历史总积分</span>
-                        <span><b id="historyTotalDisplay">0</b> 分</span>
+                        <span class="label">🏛️ 历史总积分</span>
+                        <span class="value" id="historyTotalDisplay">0</span>
                     </div>
-                    <div class="score-detail-row font-bold text-primary">
-                        <span>📊 显示总积分</span>
-                        <span><b id="displayTotalDisplay">0</b> 分</span>
+                    <div class="score-detail-row">
+                        <span class="label">📊 显示总积分</span>
+                        <span class="value primary" id="displayTotalDisplay">0</span>
                     </div>
                 </div>
                 <div id="rankResetInfo" class="text-xs text-gray-400 mt-1 text-center">
@@ -268,7 +271,7 @@
                         </div>
                         <span class="text-sm text-gray-400">10题 · 100分</span>
                     </div>
-                    <p class="text-xs text-gray-500 mt-1">不限次数 · 记录最高分 · 每日更新题库</p>
+                    <p class="text-xs text-gray-500 mt-1">不限次数 · 积分每日累加 · 每日更新题库</p>
                     <div class="mt-2 text-xs text-gray-400" id="warmupStatus">今日未玩</div>
                 </div>
 
@@ -282,7 +285,7 @@
                         <span class="text-sm text-gray-400">15题 · 150分</span>
                     </div>
                     <p class="text-xs text-gray-500 mt-1">每日3次 · 连击加分 · 20秒限时</p>
-                    <div class="mt-2 text-xs text-gray-400" id="rankedStatus">今日剩余: 3次 | 最高: --</div>
+                    <div class="mt-2 text-xs text-gray-400" id="rankedStatus">今日剩余: 3次 | 积分: 0</div>
                 </div>
 
                 <div class="mode-card" onclick="enterMode('challenge')">
@@ -295,7 +298,7 @@
                         <span class="text-sm text-gray-400">20题 · 200分</span>
                     </div>
                     <p class="text-xs text-gray-500 mt-1">每日1次 · 答错即止 · 连击倍率 · 15秒限时</p>
-                    <div class="mt-2 text-xs text-gray-400" id="challengeStatus">今日已用: 0/1 | 最高: --</div>
+                    <div class="mt-2 text-xs text-gray-400" id="challengeStatus">今日已用: 0/1 | 积分: 0</div>
                 </div>
             </div>
 
@@ -357,9 +360,9 @@
                 <p class="text-gray-600 mb-4">模式：<span id="resMode"></span></p>
                 <p class="text-[32px] font-bold text-primary mb-2">得分：<span id="totalScore">0</span></p>
                 <div class="text-sm text-gray-600 mb-4 p-3 bg-gray-50 rounded-lg">
-                    <div class="flex justify-between"><span>📅 今日累计:</span><span id="resultDailyScore">0</span></div>
-                    <div class="flex justify-between"><span>🏛️ 历史总积分:</span><span id="resultHistoryScore">0</span></div>
-                    <div class="flex justify-between font-bold text-primary"><span>📊 显示总积分:</span><span id="resultDisplayScore">0</span></div>
+                    <div class="score-detail-row"><span class="label">📅 今日累计</span><span class="value" id="resultDailyScore">0</span></div>
+                    <div class="score-detail-row"><span class="label">🏛️ 历史总积分</span><span class="value" id="resultHistoryScore">0</span></div>
+                    <div class="score-detail-row"><span class="label primary">📊 显示总积分</span><span class="value primary" id="resultDisplayScore">0</span></div>
                 </div>
                 <p class="text-sm text-gray-400 mb-6" id="resultDetail"></p>
                 <div class="space-y-3">
@@ -473,7 +476,7 @@
 
     <script>
         // ============================================================
-        //  ✅ 统一的日期工具 (UTC)
+        //  统一的日期工具 (UTC)
         // ============================================================
         const DateUtils = {
             getTodayUTC: function() {
@@ -615,11 +618,11 @@
         }
 
         // ============================================================
-        //  数据适配器
+        //  ✅ 修复：数据适配器 - 正确映射所有积分字段
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
-            
+
             var normalized = {
                 id: user.id,
                 name: user.name,
@@ -627,21 +630,29 @@
                 version: user.version || 1,
                 created_at: user.created_at,
                 updated_at: user.updated_at,
-                
-                // 每日积分
-                dailyWarmupScore: user.daily_warmup_score || user.dailyWarmupScore || 0,
-                dailyRankScore: user.daily_rank_score || user.dailyRankScore || 0,
-                dailyChallengeScore: user.daily_challenge_score || user.dailyChallengeScore || 0,
-                dailyTotalScore: user.daily_total_score || user.dailyTotalScore || 0,
+
+                // ✅ 每日积分（数据库字段名）
+                dailyWarmupScore: user.daily_warmup_score !== undefined ? user.daily_warmup_score : (user
+                    .dailyWarmupScore || 0),
+                dailyRankScore: user.daily_rank_score !== undefined ? user.daily_rank_score : (user.dailyRankScore ||
+                    0),
+                dailyChallengeScore: user.daily_challenge_score !== undefined ? user.daily_challenge_score : (user
+                    .dailyChallengeScore || 0),
+                dailyTotalScore: user.daily_total_score !== undefined ? user.daily_total_score : (user
+                    .dailyTotalScore || 0),
                 dailyDate: user.daily_date || user.dailyDate || '',
-                
-                // 历史总积分
-                totalWarmupScore: user.total_warmup_score || user.totalWarmupScore || 0,
-                totalRankScore: user.total_rank_score || user.totalRankScore || 0,
-                totalChallengeScore: user.total_challenge_score || user.totalChallengeScore || 0,
-                totalTotalScore: user.total_total_score || user.totalTotalScore || 0,
-                
-                // 兼容字段
+
+                // ✅ 历史总积分（数据库字段名）
+                totalWarmupScore: user.total_warmup_score !== undefined ? user.total_warmup_score : (user
+                    .totalWarmupScore || 0),
+                totalRankScore: user.total_rank_score !== undefined ? user.total_rank_score : (user.totalRankScore ||
+                    0),
+                totalChallengeScore: user.total_challenge_score !== undefined ? user.total_challenge_score : (user
+                    .totalChallengeScore || 0),
+                totalTotalScore: user.total_total_score !== undefined ? user.total_total_score : (user
+                    .totalTotalScore || 0),
+
+                // ✅ 兼容字段（保持同步）
                 warmupScore: user.warmup_score || user.warmupScore || 0,
                 warmupDate: user.warmup_date || user.warmupDate || '',
                 rankScore: user.rank_score || user.rankScore || 0,
@@ -654,10 +665,20 @@
                 rankHistory: user.rankHistory || [],
                 challengeHistory: user.challengeHistory || []
             };
-            
-            // 计算显示用的总积分
+
+            // ✅ 如果 dailyDate 不是今天，重置每日积分
+            var today = DateUtils.getTodayUTC();
+            if (normalized.dailyDate !== today) {
+                normalized.dailyWarmupScore = 0;
+                normalized.dailyRankScore = 0;
+                normalized.dailyChallengeScore = 0;
+                normalized.dailyTotalScore = 0;
+                normalized.dailyDate = today;
+            }
+
+            // ✅ 计算显示用的总积分
             normalized.totalScore = (normalized.dailyTotalScore || 0) + (normalized.totalTotalScore || 0);
-            
+
             return normalized;
         }
 
@@ -673,14 +694,14 @@
         }
 
         // ============================================================
-        //  ✅ 积分类型切换
+        //  积分类型切换
         // ============================================================
         function switchScoreType(type) {
             currentScoreType = type;
             document.querySelectorAll('.score-type-tab').forEach(function(el) {
                 el.classList.toggle('active', el.dataset.type === type);
             });
-            
+
             var labels = {
                 'total': '📊 总积分',
                 'daily': '📅 今日积分',
@@ -691,12 +712,12 @@
         }
 
         // ============================================================
-        //  ✅ 获取当前显示的积分值
+        //  获取当前显示的积分值
         // ============================================================
         function getDisplayScores(user) {
             if (!user) return { warmup: 0, rank: 0, challenge: 0, total: 0 };
-            
-            switch(currentScoreType) {
+
+            switch (currentScoreType) {
                 case 'daily':
                     return {
                         warmup: user.dailyWarmupScore || 0,
@@ -763,18 +784,19 @@
         async function getRankRemainCount(name) {
             if (!name) return 3;
             var today = DateUtils.getTodayUTC();
-            
-            if (currentUser && currentUser.name === name && currentUser.rankDaily && currentUser.rankDaily.date === today) {
+
+            if (currentUser && currentUser.name === name && currentUser.rankDaily && currentUser.rankDaily.date ===
+                today) {
                 var used = parseInt(currentUser.rankDaily.used) || 0;
                 return Math.max(0, 3 - used);
             }
-            
+
             var data = getRankDailyCache(name);
             if (data && data.date === today) {
                 var used = parseInt(data.used) || 0;
                 return Math.max(0, 3 - used);
             }
-            
+
             try {
                 var result = await apiCall('/sync-rank', 'POST', { name: name });
                 if (result && result.rankDaily && result.rankDaily.date === today) {
@@ -786,44 +808,44 @@
                     }
                     return Math.max(0, 3 - used);
                 }
-            } catch(e) {
+            } catch (e) {
                 console.error('获取排位赛次数失败:', e);
             }
-            
+
             return 3;
         }
 
         async function useRankDaily(name) {
             if (!name) return { success: false, remain: 0, message: '用户名为空' };
             var today = DateUtils.getTodayUTC();
-            
+
             try {
                 var remain = await getRankRemainCount(name);
                 if (remain <= 0) {
                     return { success: false, remain: 0, message: '今日排位赛次数已用完' };
                 }
-                
+
                 var result = await apiCall('/use-rank', 'POST', { name: name });
-                
+
                 if (result && result.error) {
                     return { success: false, remain: 0, message: result.error };
                 }
-                
+
                 if (result && result.rankDaily) {
                     var data = result.rankDaily;
                     var used = parseInt(data.used) || 0;
                     var newRemain = Math.max(0, 3 - used);
-                    
+
                     if (currentUser && currentUser.name === name) {
                         currentUser.rankDaily = data;
                         currentUser.rankRemain = newRemain;
                     }
-                    
+
                     setRankDailyCache(name, data);
-                    
+
                     return { success: true, remain: newRemain, used: used };
                 }
-                
+
                 return { success: false, remain: 0, message: '扣减失败' };
             } catch (e) {
                 console.error('使用排位赛次数失败:', e);
@@ -834,14 +856,14 @@
         function applyRankDataToUser(user) {
             if (!user || !user.name) return;
             var today = DateUtils.getTodayUTC();
-            
+
             if (user.rankDaily && user.rankDaily.date === today) {
                 var used = parseInt(user.rankDaily.used) || 0;
                 user.rankRemain = Math.max(0, 3 - used);
                 setRankDailyCache(user.name, user.rankDaily);
                 return;
             }
-            
+
             var data = getRankDailyCache(user.name);
             if (!data || data.date !== today) {
                 data = { date: today, used: 0 };
@@ -925,7 +947,8 @@
                     var bufferSize = audioCtx.sampleRate * 0.15;
                     var buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
                     var data = buffer.getChannelData(0);
-                    for (var i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.03));
+                    for (var i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx
+                        .sampleRate * 0.03));
                     var source = audioCtx.createBufferSource();
                     source.buffer = buffer;
                     var gain2 = audioCtx.createGain();
@@ -1087,7 +1110,7 @@
                 currentUser = normalizeUser(rawUser);
 
                 var today = DateUtils.getTodayUTC();
-                
+
                 // 检查每日积分是否需要重置
                 if (currentUser.dailyDate !== today) {
                     currentUser.dailyWarmupScore = 0;
@@ -1096,7 +1119,7 @@
                     currentUser.dailyTotalScore = 0;
                     currentUser.dailyDate = today;
                 }
-                
+
                 if (currentUser.rankDaily && currentUser.rankDaily.date === today) {
                     setRankDailyCache(currentUser.name, currentUser.rankDaily);
                     currentUser.rankRemain = Math.max(0, 3 - (currentUser.rankDaily.used || 0));
@@ -1129,18 +1152,18 @@
                     name: user.name,
                     unit: user.unit,
                     version: user.version || 1,
-                    
+
                     dailyWarmupScore: user.dailyWarmupScore || 0,
                     dailyRankScore: user.dailyRankScore || 0,
                     dailyChallengeScore: user.dailyChallengeScore || 0,
                     dailyTotalScore: user.dailyTotalScore || 0,
                     dailyDate: user.dailyDate || DateUtils.getTodayUTC(),
-                    
+
                     totalWarmupScore: user.totalWarmupScore || 0,
                     totalRankScore: user.totalRankScore || 0,
                     totalChallengeScore: user.totalChallengeScore || 0,
                     totalTotalScore: user.totalTotalScore || 0,
-                    
+
                     warmupScore: user.warmupScore || 0,
                     warmupDate: user.warmupDate || '',
                     rankScore: user.rankScore || 0,
@@ -1148,7 +1171,7 @@
                     challengeDate: user.challengeDate || '',
                     totalScore: user.totalScore || 0,
                     challengeUsed: user.challengeUsed || 0,
-                    
+
                     rankDaily: user.rankDaily || { date: DateUtils.getTodayUTC(), used: 0 },
                     rankHistory: user.rankHistory || [],
                     challengeHistory: user.challengeHistory || []
@@ -1169,9 +1192,10 @@
                 if (result && result.user) {
                     var updated = normalizeUser(result.user);
                     if (currentUser) {
-                        updated.rankDaily = updated.rankDaily || currentUser.rankDaily || { date: DateUtils.getTodayUTC(), used: 0 };
+                        updated.rankDaily = updated.rankDaily || currentUser.rankDaily || { date: DateUtils
+                                .getTodayUTC(), used: 0 };
                         updated.rankRemain = updated.rank_remain !== undefined ? updated.rank_remain : 3;
-                        
+
                         if (!updated.rankHistory || updated.rankHistory.length === 0) {
                             updated.rankHistory = currentUser.rankHistory || [];
                         }
@@ -1209,13 +1233,13 @@
         }
 
         // ============================================================
-        //  ✅ 主界面更新 - 双轨制积分
+        //  主界面更新 - 双轨制积分
         // ============================================================
         function updateMainUI() {
             if (!currentUser) return;
 
             applyRankDataToUser(currentUser);
-            
+
             var today = DateUtils.getTodayUTC();
             if (currentUser.dailyDate !== today) {
                 currentUser.dailyWarmupScore = 0;
@@ -1226,28 +1250,29 @@
             }
 
             var displayScores = getDisplayScores(currentUser);
-            
+
             document.getElementById('mainUserName').textContent = currentUser.name;
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = displayScores.total;
             document.getElementById('mainWarmup').textContent = displayScores.warmup;
             document.getElementById('mainRank').textContent = displayScores.rank;
             document.getElementById('mainChallenge').textContent = displayScores.challenge;
-            
+
             document.getElementById('dailyTotalDisplay').textContent = currentUser.dailyTotalScore || 0;
             document.getElementById('historyTotalDisplay').textContent = currentUser.totalTotalScore || 0;
-            document.getElementById('displayTotalDisplay').textContent = (currentUser.dailyTotalScore || 0) + (currentUser.totalTotalScore || 0);
-            
+            document.getElementById('displayTotalDisplay').textContent = (currentUser.dailyTotalScore || 0) + (currentUser
+                .totalTotalScore || 0);
+
             var rankRemain = currentUser.rankRemain || 0;
             var rankUsed = 3 - rankRemain;
             document.getElementById('mainRankRemain').textContent = rankRemain;
-            
+
             var statusEl = document.getElementById('rankedStatus');
             if (statusEl) {
                 var rankDisplay = getDisplayScores(currentUser).rank;
                 statusEl.textContent = '今日剩余: ' + rankRemain + '次 | 已用: ' + rankUsed + '/3 | 积分: ' + rankDisplay;
             }
-            
+
             var badge = document.getElementById('rankBadge');
             if (badge) {
                 if (rankRemain >= 3) {
@@ -1262,7 +1287,8 @@
                 }
             }
 
-            var wStatus = currentUser.warmupDate === today ? '今日已玩 | 积分: ' + getDisplayScores(currentUser).warmup : '今日未玩';
+            var wStatus = currentUser.warmupDate === today ? '今日已玩 | 积分: ' + getDisplayScores(currentUser).warmup :
+                '今日未玩';
             document.getElementById('warmupStatus').textContent = wStatus;
             document.getElementById('challengeStatus').textContent =
                 '今日已用: ' + (currentUser.challengeUsed || 0) + '/1 | 积分: ' + getDisplayScores(currentUser).challenge;
@@ -1304,7 +1330,7 @@
                     var remain = await getRankRemainCount(currentUser.name);
                     currentUser.rankRemain = remain;
                     updateMainUI();
-                    
+
                     if (remain <= 0) {
                         alert('⛔ 今日排位赛次数已用完（共3次），请明天再来！');
                         hideLoading();
@@ -1369,7 +1395,8 @@
                 var key = keys[k];
                 if (!item.opt[key]) continue;
                 var div = document.createElement('div');
-                div.className = 'option-item border border-gray-300 rounded-lg p-4 active:bg-primaryBg cursor-pointer';
+                div.className =
+                    'option-item border border-gray-300 rounded-lg p-4 active:bg-primaryBg cursor-pointer';
                 div.innerHTML = '<span class="font-bold">' + key + '.</span> ' + item.opt[key];
                 div.dataset.key = key;
                 div.onclick = function() {
@@ -1499,7 +1526,8 @@
                     }
                 }
                 tipBox.className = 'rounded-lg p-3 mb-3 text-sm bg-red-50 text-danger';
-                tipText.innerHTML = '<i class="fa fa-times-circle"></i> 回答错误，正确答案：' + item.a + '. ' + item.opt[item.a];
+                tipText.innerHTML = '<i class="fa fa-times-circle"></i> 回答错误，正确答案：' + item.a + '. ' + item.opt[item
+                .a];
 
                 if (currentMode === 'challenge') {
                     endQuiz('答错淘汰');
@@ -1535,7 +1563,7 @@
         }
 
         // ============================================================
-        //  ✅ 答题结束 - 双轨制积分累加
+        //  ✅ 修复：答题结束 - 双轨制积分累加
         // ============================================================
         async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
@@ -1558,11 +1586,16 @@
             if (mode === 'warmup') {
                 currentUser.dailyWarmupScore = (currentUser.dailyWarmupScore || 0) + userScore;
                 currentUser.totalWarmupScore = (currentUser.totalWarmupScore || 0) + userScore;
-                currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore || 0) + (currentUser.dailyChallengeScore || 0);
-                currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore || 0) + (currentUser.totalChallengeScore || 0);
+                currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore ||
+                    0) + (currentUser.dailyChallengeScore || 0);
+                currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore ||
+                    0) + (currentUser.totalChallengeScore || 0);
                 currentUser.warmupDate = today;
                 currentUser.warmupScore = currentUser.dailyWarmupScore;
-                
+
+                console.log('🔥 热身赛: +' + userScore + ' | 今日: ' + currentUser.dailyWarmupScore + ' | 历史: ' +
+                    currentUser.totalWarmupScore);
+
             } else if (mode === 'ranked') {
                 var result = await useRankDaily(currentUser.name);
                 if (!result.success) {
@@ -1571,42 +1604,57 @@
                     updateMainUI();
                     return;
                 }
-                
+
                 currentUser.rankDaily = { date: today, used: result.used };
                 currentUser.rankRemain = result.remain;
 
                 currentUser.dailyRankScore = (currentUser.dailyRankScore || 0) + userScore;
                 currentUser.totalRankScore = (currentUser.totalRankScore || 0) + userScore;
-                currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore || 0) + (currentUser.dailyChallengeScore || 0);
-                currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore || 0) + (currentUser.totalChallengeScore || 0);
+                currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore ||
+                    0) + (currentUser.dailyChallengeScore || 0);
+                currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore ||
+                    0) + (currentUser.totalChallengeScore || 0);
                 currentUser.rankScore = currentUser.dailyRankScore;
-                
+
                 if (!currentUser.rankHistory) currentUser.rankHistory = [];
                 currentUser.rankHistory.push({ date: today, score: userScore });
+
+                console.log('⚔️ 排位赛: +' + userScore + ' | 今日: ' + currentUser.dailyRankScore + ' | 历史: ' +
+                    currentUser.totalRankScore);
 
             } else if (mode === 'challenge') {
                 currentUser.challengeDate = today;
                 currentUser.challengeUsed = (currentUser.challengeUsed || 0) + 1;
-                
+
                 currentUser.dailyChallengeScore = (currentUser.dailyChallengeScore || 0) + userScore;
                 currentUser.totalChallengeScore = (currentUser.totalChallengeScore || 0) + userScore;
-                currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore || 0) + (currentUser.dailyChallengeScore || 0);
-                currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore || 0) + (currentUser.totalChallengeScore || 0);
+                currentUser.dailyTotalScore = (currentUser.dailyWarmupScore || 0) + (currentUser.dailyRankScore ||
+                    0) + (currentUser.dailyChallengeScore || 0);
+                currentUser.totalTotalScore = (currentUser.totalWarmupScore || 0) + (currentUser.totalRankScore ||
+                    0) + (currentUser.totalChallengeScore || 0);
                 currentUser.challengeScore = currentUser.dailyChallengeScore;
-                
+
                 if (!currentUser.challengeHistory) currentUser.challengeHistory = [];
                 currentUser.challengeHistory.push({ date: today, score: userScore });
+
+                console.log('🏆 挑战赛: +' + userScore + ' | 今日: ' + currentUser.dailyChallengeScore + ' | 历史: ' +
+                    currentUser.totalChallengeScore);
             }
 
-            currentUser.totalScore = currentUser.dailyTotalScore + currentUser.totalTotalScore;
+            // 计算显示用的总积分
+            currentUser.totalScore = (currentUser.dailyTotalScore || 0) + (currentUser.totalTotalScore || 0);
 
+            // 保存到云端
             try {
                 await saveUserToCloud(currentUser);
+                console.log('✅ 保存成功 | 今日: ' + currentUser.dailyTotalScore + ' | 历史: ' + currentUser
+                    .totalTotalScore + ' | 显示: ' + currentUser.totalScore);
             } catch (e) {
                 console.error('❌ 保存失败:', e);
                 alert('数据保存失败，请检查网络后重试');
             }
 
+            // 显示结果
             var displayScores = getDisplayScores(currentUser);
             document.getElementById('resName').textContent = currentUser.name;
             document.getElementById('resUnit').textContent = currentUser.unit;
@@ -1615,7 +1663,7 @@
             document.getElementById('resultDailyScore').textContent = currentUser.dailyTotalScore || 0;
             document.getElementById('resultHistoryScore').textContent = currentUser.totalTotalScore || 0;
             document.getElementById('resultDisplayScore').textContent = displayScores.total;
-            
+
             var detail = [];
             if (mode === 'ranked' && comboCount > 0) detail.push('连击 x' + comboCount);
             if (reason === '超时淘汰') detail.push('⏱️ 超时淘汰');
@@ -1700,7 +1748,7 @@
                 var today = DateUtils.getTodayUTC();
                 for (var i = 0; i < users.length; i++) {
                     var u = users[i];
-                    
+
                     if (u.dailyDate !== today) {
                         u.dailyWarmupScore = 0;
                         u.dailyRankScore = 0;
@@ -1708,9 +1756,9 @@
                         u.dailyTotalScore = 0;
                         u.dailyDate = today;
                     }
-                    
+
                     u.totalScore = (u.dailyTotalScore || 0) + (u.totalTotalScore || 0);
-                    
+
                     if (!u.rankDaily || u.rankDaily.date !== today) {
                         u.rankDaily = { date: today, used: 0 };
                         u.rankRemain = 3;
@@ -1880,7 +1928,8 @@
                                 '<span class="ml-2 font-medium">' + u.name + '</span>' +
                                 '<span class="text-gray-400 text-xs ml-1">(' + (u.unit || '未分配') + ')</span>' +
                                 (isCurrentUser ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
-                                '<div class="text-xs text-gray-400">⚔️ 排位 ' + remainDisplay + ' | 📅今日 ' + (u.dailyTotalScore || 0) + ' | 🏛️历史 ' + (u.totalTotalScore || 0) + '</div>' +
+                                '<div class="text-xs text-gray-400">⚔️ 排位 ' + remainDisplay + ' | 📅今日 ' + (u
+                                    .dailyTotalScore || 0) + ' | 🏛️历史 ' + (u.totalTotalScore || 0) + '</div>' +
                                 '</div>' +
                                 '<span class="font-bold text-success">' + displayTotal + '分</span>' +
                                 '</div>';
@@ -1896,13 +1945,15 @@
                             var team = teamRanking[m];
                             var medal2 = m === 0 ? '🥇' : m === 1 ? '🥈' : m === 2 ? '🥉' : (m + 1);
                             var isMyTeam = currentUser && team.unit === currentUser.unit;
-                            teamHtml += '<div class="flex justify-between items-center p-2 bg-grayLight rounded-lg' +
+                            teamHtml +=
+                                '<div class="flex justify-between items-center p-2 bg-grayLight rounded-lg' +
                                 (isMyTeam ? ' border-2 border-primary' : '') + '">' +
                                 '<div><span class="font-bold text-primary">' + medal2 + '</span>' +
                                 '<span class="ml-2 font-medium">' + team.unit + '</span>' +
                                 '<span class="text-gray-400 text-xs ml-1">(' + team.memberCount + '人)</span>' +
                                 (isMyTeam ? '<span class="ml-2 text-primary text-xs">👈 你的战队</span>' : '') +
-                                '<div class="text-xs text-gray-400">📅今日 ' + team.dailyScore + ' | 🏛️历史 ' + team.historyScore + '</div>' +
+                                '<div class="text-xs text-gray-400">📅今日 ' + team.dailyScore + ' | 🏛️历史 ' +
+                                team.historyScore + '</div>' +
                                 '</div>' +
                                 '<span class="font-bold text-success">' + team.totalScore + '分</span>' +
                                 '</div>';
@@ -1920,7 +1971,8 @@
                     var team = select.value;
 
                     if (!team || team === '') {
-                        rankBox.innerHTML = '<div class="text-center text-gray-400 py-4">👆 请选择战队查看内部排行</div>';
+                        rankBox.innerHTML =
+                            '<div class="text-center text-gray-400 py-4">👆 请选择战队查看内部排行</div>';
                         hideLoading();
                         return;
                     }
@@ -1939,12 +1991,15 @@
                     }
 
                     var sorted2 = members.slice().sort(function(a, b) {
-                        return ((b.dailyTotalScore || 0) + (b.totalTotalScore || 0)) - ((a.dailyTotalScore || 0) + (a.totalTotalScore || 0));
+                        return ((b.dailyTotalScore || 0) + (b.totalTotalScore || 0)) - ((a.dailyTotalScore ||
+                            0) + (a.totalTotalScore || 0));
                     });
 
                     var html2 = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>' +
-                        '<div class="text-sm text-gray-500 mb-3">战队总积分：<b class="text-primary">' + teamTotal + '分</b> | 成员：' + members.length + '人</div>' +
-                        '<div class="text-xs text-gray-400 mb-2">📅今日 ' + teamDaily + ' | 🏛️历史 ' + teamHistory + '</div>';
+                        '<div class="text-sm text-gray-500 mb-3">战队总积分：<b class="text-primary">' +
+                        teamTotal + '分</b> | 成员：' + members.length + '人</div>' +
+                        '<div class="text-xs text-gray-400 mb-2">📅今日 ' + teamDaily + ' | 🏛️历史 ' + teamHistory +
+                        '</div>';
 
                     if (sorted2.length === 0) {
                         html2 += '<p class="text-center text-gray-400 py-4">该战队暂无成员</p>';
@@ -1954,12 +2009,14 @@
                             var medal3 = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
                             var isMe = currentUser && u2.name === currentUser.name;
                             var displayTotal2 = (u2.dailyTotalScore || 0) + (u2.totalTotalScore || 0);
-                            html2 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
+                            html2 +=
+                                '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
                                 (isMe ? ' border-2 border-primary' : '') + '">' +
                                 '<div><span class="font-bold text-primary">' + medal3 + '</span>' +
                                 '<span class="ml-2 font-medium">' + u2.name + '</span>' +
                                 (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
-                                '<div class="text-xs text-gray-400">📅今日 ' + (u2.dailyTotalScore || 0) + ' | 🏛️历史 ' + (u2.totalTotalScore || 0) + '</div>' +
+                                '<div class="text-xs text-gray-400">📅今日 ' + (u2.dailyTotalScore || 0) +
+                                ' | 🏛️历史 ' + (u2.totalTotalScore || 0) + '</div>' +
                                 '</div>' +
                                 '<span class="font-bold text-success">' + displayTotal2 + '分</span>' +
                                 '</div>';
@@ -1994,7 +2051,7 @@
                         var periodScore = 0;
                         var hasActivity = false;
                         var scoreDetails = [];
-                        
+
                         // 检查每日积分
                         if (user.dailyDate && user.dailyTotalScore > 0) {
                             try {
@@ -2004,10 +2061,10 @@
                                     hasActivity = true;
                                     scoreDetails.push('今日+' + user.dailyTotalScore);
                                 }
-                            } catch(e) {}
+                            } catch (e) {}
                         }
-                        
-                        // 检查历史积分（只计算在周期内的历史记录）
+
+                        // 检查历史积分
                         if (user.rankHistory && Array.isArray(user.rankHistory)) {
                             for (var r = 0; r < user.rankHistory.length; r++) {
                                 try {
@@ -2020,10 +2077,10 @@
                                             hasActivity = true;
                                         }
                                     }
-                                } catch(e) {}
+                                } catch (e) {}
                             }
                         }
-                        
+
                         if (user.challengeHistory && Array.isArray(user.challengeHistory)) {
                             for (var c = 0; c < user.challengeHistory.length; c++) {
                                 try {
@@ -2036,7 +2093,7 @@
                                             hasActivity = true;
                                         }
                                     }
-                                } catch(e) {}
+                                } catch (e) {}
                             }
                         }
 
@@ -2056,7 +2113,8 @@
                     var topResults = periodResults.slice(0, 10);
 
                     var html3 = '<div class="rank-section-title">📅 ' + periodLabel + '个人总积分 TOP10</div>' +
-                        '<div class="text-xs text-gray-400 mb-3">统计周期：' + periodStart.toLocaleDateString('zh-CN') + ' 至今</div>' +
+                        '<div class="text-xs text-gray-400 mb-3">统计周期：' + periodStart.toLocaleDateString(
+                        'zh-CN') + ' 至今</div>' +
                         '<div class="text-xs text-gray-400 mb-3">💡 积分为热身+排位+挑战总和</div>';
 
                     if (topResults.length === 0) {
@@ -2067,14 +2125,16 @@
                             var u3 = item.user;
                             var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
                             var isMe = currentUser && u3.name === currentUser.name;
-                            html3 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
+                            html3 +=
+                                '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
                                 (isMe ? ' border-2 border-primary' : '') + '">' +
                                 '<div><span class="font-bold text-primary">' + medal4 + '</span>' +
                                 '<span class="ml-2 font-medium">' + u3.name + '</span>' +
                                 '<span class="text-gray-400 text-xs ml-1">(' + (u3.unit || '未分配') + ')</span>' +
                                 (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
                                 '</div>' +
-                                '<div class="text-right"><span class="font-bold text-success">' + item.periodScore + '分</span>' +
+                                '<div class="text-right"><span class="font-bold text-success">' + item
+                                .periodScore + '分</span>' +
                                 '<div class="text-xs text-gray-400">' + (item.details || '') + '</div></div>' +
                                 '</div>';
                         }
@@ -2098,7 +2158,7 @@
                 if (cachedUsers.length > 0) {
                     setStorage('localUsers', cachedUsers);
                 }
-            } catch(e) {
+            } catch (e) {
                 console.error('更新缓存失败:', e);
             }
         }
@@ -2124,24 +2184,29 @@
                 var filtered = list;
                 if (searchVal) {
                     filtered = list.filter(function(u) {
-                        return u.name.toLowerCase().includes(searchVal) || u.unit.toLowerCase().includes(searchVal);
+                        return u.name.toLowerCase().includes(searchVal) || u.unit.toLowerCase().includes(
+                        searchVal);
                     });
                 }
                 var html = '';
                 if (filtered.length === 0) {
-                    html = '<p class="text-gray-400 text-center py-4">' + (searchVal ? '🔍 未找到匹配用户' : '暂无注册用户') + '</p>';
+                    html = '<p class="text-gray-400 text-center py-4">' + (searchVal ? '🔍 未找到匹配用户' :
+                        '暂无注册用户') + '</p>';
                 } else {
                     for (var i = 0; i < filtered.length; i++) {
                         var u = filtered[i];
                         var remain = u.rankRemain !== undefined ? u.rankRemain : '--';
                         var total = (u.dailyTotalScore || 0) + (u.totalTotalScore || 0);
-                        html += '<div class="p-2 bg-grayLight rounded text-xs my-1 flex justify-between items-center">' +
+                        html +=
+                            '<div class="p-2 bg-grayLight rounded text-xs my-1 flex justify-between items-center">' +
                             '<div><span class="font-medium">' + u.name + '</span><span class="text-gray-500 ml-2">(' +
                             u.unit + ')</span>' +
                             '<span class="text-primary font-bold ml-2">' + total + '分</span>' +
-                            '<span class="text-gray-400 ml-2">📅' + (u.dailyTotalScore || 0) + ' 🏛️' + (u.totalTotalScore || 0) + '</span>' +
+                            '<span class="text-gray-400 ml-2">📅' + (u.dailyTotalScore || 0) + ' 🏛️' + (u
+                                .totalTotalScore || 0) + '</span>' +
                             '<span class="text-gray-400 ml-2">排位剩余: ' + remain + '次</span></div>' +
-                            '<div class="user-item-actions"><button onclick="resetUserPassword(\'' + u.name + '\')" class="reset-pwd-btn">🔑 重置密码</button></div>' +
+                            '<div class="user-item-actions"><button onclick="resetUserPassword(\'' + u.name +
+                            '\')" class="reset-pwd-btn">🔑 重置密码</button></div>' +
                             '</div>';
                     }
                 }
