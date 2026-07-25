@@ -39,9 +39,9 @@ export async function onRequest(context) {
 
         const today = new Date().toISOString().split('T')[0];
         
-        // 检查每日积分是否需要重置（只重置每日积分，不影响历史积分）
+        // ✅ 检查每日积分是否需要重置（只重置每日积分，不影响历史积分）
         if (user.daily_date !== today) {
-            // 只重置每日积分字段
+            // ✅ 只重置每日积分字段，历史积分保持不变
             await db.prepare(`
                 UPDATE users SET 
                     daily_warmup_score = 0,
@@ -49,14 +49,16 @@ export async function onRequest(context) {
                     daily_challenge_score = 0,
                     daily_total_score = 0,
                     daily_date = ?,
+                    -- ✅ 兼容字段同步为每日积分（重置后为0）
                     warmup_score = 0,
                     rank_score = 0,
                     challenge_score = 0,
+                    -- ✅ total_score 重新计算 = 每日积分(0) + 历史总积分
                     total_score = total_total_score
                 WHERE id = ?
             `).bind(today, user.id).run();
             
-            // 更新内存中的用户对象
+            // ✅ 更新内存中的用户对象（每日积分重置为0）
             user.daily_warmup_score = 0;
             user.daily_rank_score = 0;
             user.daily_challenge_score = 0;
@@ -67,7 +69,7 @@ export async function onRequest(context) {
             user.challenge_score = 0;
         }
         
-        // 从云端查询今日排位赛已用次数
+        // ✅ 从云端查询今日排位赛已用次数
         let rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
         `).bind(user.id, today).first();
@@ -83,7 +85,7 @@ export async function onRequest(context) {
         user.rank_remain = Math.max(0, 3 - used);
         user.rankDaily = { date: today, used: used };
 
-        // 计算显示用的总积分 = 每日积分 + 历史总积分
+        // ✅ 计算显示用的总积分 = 每日积分 + 历史总积分
         user.total_score = (user.daily_total_score || 0) + (user.total_total_score || 0);
 
         delete user.pwd;

@@ -42,62 +42,71 @@ export async function onRequest(context) {
             }), { status: 409, headers });
         }
 
-        // 直接从 userData 获取值
+        // ✅ 直接从 userData 获取值（前端已正确累加）
         const dailyWarmup = userData.dailyWarmupScore || 0;
         const dailyRank = userData.dailyRankScore || 0;
         const dailyChallenge = userData.dailyChallengeScore || 0;
         const dailyTotal = userData.dailyTotalScore || 0;
         const dailyDate = userData.dailyDate || today;
         
+        // ✅ 历史总积分（从 userData 获取，前端已正确累加）
         const totalWarmup = userData.totalWarmupScore || 0;
         const totalRank = userData.totalRankScore || 0;
         const totalChallenge = userData.totalChallengeScore || 0;
         const totalTotal = userData.totalTotalScore || 0;
         
-        // 显示总积分 = 每日积分 + 历史总积分
+        // ✅ 显示总积分 = 每日积分 + 历史总积分
         const displayTotal = dailyTotal + totalTotal;
 
-        // 构建事务语句
+        // ✅ 构建事务语句
         const statements = [];
 
-        // 1. 更新用户主表 - 保持每日积分和历史积分独立
+        // ✅ 1. 更新用户主表 - 每日积分和历史积分独立存储
         statements.push(
             db.prepare(`
                 UPDATE users SET
+                    -- ✅ 每日积分字段（独立存储，每日重置）
                     daily_warmup_score = ?,
                     daily_rank_score = ?,
                     daily_challenge_score = ?,
                     daily_total_score = ?,
                     daily_date = ?,
+                    -- ✅ 历史总积分字段（独立存储，永久累加，不被每日积分影响）
                     total_warmup_score = ?,
                     total_rank_score = ?,
                     total_challenge_score = ?,
                     total_total_score = ?,
+                    -- ✅ 兼容字段：warmup_score 存储每日积分（用于显示）
                     warmup_score = ?,
                     warmup_date = ?,
                     rank_score = ?,
                     challenge_score = ?,
                     challenge_date = ?,
+                    -- ✅ total_score 存储显示总积分（每日+历史）
                     total_score = ?,
                     challenge_used = ?,
                     version = version + 1,
                     updated_at = ?
                 WHERE name = ?
             `).bind(
+                // 每日积分
                 dailyWarmup,
                 dailyRank,
                 dailyChallenge,
                 dailyTotal,
                 dailyDate,
+                // 历史总积分（从 userData 获取，独立存储）
                 totalWarmup,
                 totalRank,
                 totalChallenge,
                 totalTotal,
+                // 兼容字段（使用每日积分用于显示）
                 dailyWarmup,
                 dailyDate,
                 dailyRank,
                 dailyChallenge,
                 dailyDate,
+                // 显示总积分
                 displayTotal,
                 userData.challengeUsed || 0,
                 now,
@@ -161,7 +170,7 @@ export async function onRequest(context) {
             await db.batch(statements);
         }
 
-        // 获取更新后的用户数据
+        // ✅ 获取更新后的用户数据
         const updatedUser = await db.prepare(`
             SELECT id, name, unit, 
                    daily_warmup_score, daily_rank_score, daily_challenge_score, daily_total_score, daily_date,
@@ -180,7 +189,7 @@ export async function onRequest(context) {
         updatedUser.rank_remain = Math.max(0, 3 - used);
         updatedUser.rankDaily = { date: today, used: used };
         
-        // 计算显示总积分
+        // ✅ 计算显示总积分 = 每日积分 + 历史总积分
         updatedUser.total_score = (updatedUser.daily_total_score || 0) + (updatedUser.total_total_score || 0);
 
         return new Response(JSON.stringify({ 
