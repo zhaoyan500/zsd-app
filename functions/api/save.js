@@ -20,7 +20,8 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
         const now = new Date().toISOString();
-        const today = new Date().toDateString();
+        // ✅ 使用 UTC 日期
+        const today = new Date().toISOString().split('T')[0];
 
         // 获取用户ID和版本号
         const user = await db.prepare(`
@@ -75,12 +76,14 @@ export async function onRequest(context) {
         // 2. 更新排位赛每日记录 - 使用 UPSERT
         if (userData.rankDaily && userData.rankDaily.used !== undefined) {
             const used = userData.rankDaily.used || 0;
+            // ✅ 使用 UTC 日期
+            const dailyDate = userData.rankDaily.date || today;
             statements.push(
                 db.prepare(`
                     INSERT INTO rank_daily (user_id, date, used) 
                     VALUES (?, ?, ?)
                     ON CONFLICT(user_id, date) DO UPDATE SET used = ?
-                `).bind(userId, today, used, used)
+                `).bind(userId, dailyDate, used, used)
             );
         }
 
@@ -134,7 +137,7 @@ export async function onRequest(context) {
             FROM users WHERE name = ?
         `).bind(name).first();
 
-        // 获取最新的排位赛数据
+        // ✅ 获取最新的排位赛数据（使用 UTC 日期）
         const rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
         `).bind(userId, today).first();

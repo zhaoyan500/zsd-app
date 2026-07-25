@@ -17,16 +17,20 @@ export async function onRequest(context) {
         `).all();
 
         const results = users.results || [];
-        const today = new Date().toDateString();
+        // ✅ 使用 UTC 日期
+        const today = new Date().toISOString().split('T')[0];
 
         for (const user of results) {
-            // 查询今日排位赛已用次数
+            // 从云端查询今日排位赛已用次数
             let rankDaily = await db.prepare(`
                 SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
             `).bind(user.id, today).first();
             
-            // 如果没有记录，说明今天还没玩过
             if (!rankDaily) {
+                // ✅ 没有记录则创建
+                await db.prepare(`
+                    INSERT INTO rank_daily (user_id, date, used) VALUES (?, ?, 0)
+                `).bind(user.id, today).run();
                 rankDaily = { used: 0 };
             }
             

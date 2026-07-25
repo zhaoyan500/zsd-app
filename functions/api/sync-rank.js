@@ -19,7 +19,9 @@ export async function onRequest(context) {
         }
 
         const db = env.D1_DB;
-        const today = new Date().toDateString();
+        
+        // ✅ 使用 UTC 日期
+        const today = new Date().toISOString().split('T')[0];
 
         // 获取用户ID
         const user = await db.prepare(`
@@ -30,20 +32,24 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
 
+        const userId = user.id;
+
         // 查询今日排位赛已用次数
         let rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
-        `).bind(user.id, today).first();
+        `).bind(userId, today).first();
 
-        if (!rankDaily) {
-            // 没有记录，创建一条
+        let used = 0;
+
+        if (rankDaily) {
+            used = rankDaily.used || 0;
+        } else {
+            // 没有记录则创建一条（used = 0），确保用户有记录
             await db.prepare(`
                 INSERT INTO rank_daily (user_id, date, used) VALUES (?, ?, 0)
-            `).bind(user.id, today).run();
-            rankDaily = { used: 0 };
+            `).bind(userId, today).run();
         }
 
-        const used = rankDaily.used || 0;
         const remain = Math.max(0, 3 - used);
 
         return new Response(JSON.stringify({
