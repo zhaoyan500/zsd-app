@@ -52,7 +52,31 @@ export async function onRequest(context) {
             user.rankDaily = { date: today, used: used };
         }
 
-        return new Response(JSON.stringify(results), { headers });
+        // 计算战队排名
+        const teamMap = {};
+        for (const user of results) {
+            const unit = user.unit || '未分配';
+            if (!teamMap[unit]) {
+                teamMap[unit] = {
+                    unit: unit,
+                    totalScore: 0,
+                    dailyScore: 0,
+                    historyScore: 0,
+                    memberCount: 0
+                };
+            }
+            teamMap[unit].totalScore += (user.daily_total_score || 0) + (user.total_total_score || 0);
+            teamMap[unit].dailyScore += (user.daily_total_score || 0);
+            teamMap[unit].historyScore += (user.total_total_score || 0);
+            teamMap[unit].memberCount += 1;
+        }
+
+        const teamRanking = Object.values(teamMap).sort((a, b) => b.totalScore - a.totalScore);
+
+        return new Response(JSON.stringify({ 
+            users: results,
+            teamRanking: teamRanking
+        }), { headers });
     } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
     }

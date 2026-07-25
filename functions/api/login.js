@@ -39,7 +39,7 @@ export async function onRequest(context) {
 
         const today = new Date().toISOString().split('T')[0];
         
-        // ✅ 检查每日积分是否需要重置（只重置每日积分，不影响历史积分）
+        // ✅ 检查每日积分是否需要重置（只重置每日积分，历史积分保持不变）
         if (user.daily_date !== today) {
             // ✅ 只重置每日积分字段，历史积分保持不变
             await db.prepare(`
@@ -54,9 +54,10 @@ export async function onRequest(context) {
                     rank_score = 0,
                     challenge_score = 0,
                     -- ✅ total_score 重新计算 = 每日积分(0) + 历史总积分
-                    total_score = total_total_score
+                    total_score = total_total_score,
+                    updated_at = ?
                 WHERE id = ?
-            `).bind(today, user.id).run();
+            `).bind(today, new Date().toISOString(), user.id).run();
             
             // ✅ 更新内存中的用户对象（每日积分重置为0）
             user.daily_warmup_score = 0;
@@ -88,6 +89,7 @@ export async function onRequest(context) {
         // ✅ 计算显示用的总积分 = 每日积分 + 历史总积分
         user.total_score = (user.daily_total_score || 0) + (user.total_total_score || 0);
 
+        // 删除密码字段
         delete user.pwd;
 
         return new Response(JSON.stringify({ success: true, user: user }), { headers });

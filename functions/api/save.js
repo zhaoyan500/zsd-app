@@ -42,14 +42,13 @@ export async function onRequest(context) {
             }), { status: 409, headers });
         }
 
-        // ✅ 直接从 userData 获取值（前端已正确累加）
+        // ✅ 从 userData 获取所有积分值（前端已正确累加）
         const dailyWarmup = userData.dailyWarmupScore || 0;
         const dailyRank = userData.dailyRankScore || 0;
         const dailyChallenge = userData.dailyChallengeScore || 0;
         const dailyTotal = userData.dailyTotalScore || 0;
         const dailyDate = userData.dailyDate || today;
         
-        // ✅ 历史总积分（从 userData 获取，前端已正确累加）
         const totalWarmup = userData.totalWarmupScore || 0;
         const totalRank = userData.totalRankScore || 0;
         const totalChallenge = userData.totalChallengeScore || 0;
@@ -65,48 +64,54 @@ export async function onRequest(context) {
         statements.push(
             db.prepare(`
                 UPDATE users SET
-                    -- ✅ 每日积分字段（独立存储，每日重置）
+                    -- 📅 每日积分（每日重置）
                     daily_warmup_score = ?,
                     daily_rank_score = ?,
                     daily_challenge_score = ?,
                     daily_total_score = ?,
                     daily_date = ?,
-                    -- ✅ 历史总积分字段（独立存储，永久累加，不被每日积分影响）
+                    
+                    -- 🏛️ 历史总积分（永久累加，永不重置）
                     total_warmup_score = ?,
                     total_rank_score = ?,
                     total_challenge_score = ?,
                     total_total_score = ?,
-                    -- ✅ 兼容字段：warmup_score 存储每日积分（用于显示）
+                    
+                    -- ✅ 兼容字段：存储每日积分（用于旧版查询和显示）
                     warmup_score = ?,
                     warmup_date = ?,
                     rank_score = ?,
                     challenge_score = ?,
                     challenge_date = ?,
-                    -- ✅ total_score 存储显示总积分（每日+历史）
+                    
+                    -- ✅ 显示总积分
                     total_score = ?,
                     challenge_used = ?,
                     version = version + 1,
                     updated_at = ?
                 WHERE name = ?
             `).bind(
-                // 每日积分
+                // 📅 每日积分
                 dailyWarmup,
                 dailyRank,
                 dailyChallenge,
                 dailyTotal,
                 dailyDate,
-                // 历史总积分（从 userData 获取，独立存储）
+                
+                // 🏛️ 历史总积分
                 totalWarmup,
                 totalRank,
                 totalChallenge,
                 totalTotal,
-                // 兼容字段（使用每日积分用于显示）
-                dailyWarmup,
-                dailyDate,
-                dailyRank,
-                dailyChallenge,
-                dailyDate,
-                // 显示总积分
+                
+                // ✅ 兼容字段：存储每日积分
+                dailyWarmup,   // warmup_score = 每日热身积分
+                dailyDate,     // warmup_date = 当前日期
+                dailyRank,     // rank_score = 每日排位积分
+                dailyChallenge,// challenge_score = 每日挑战积分
+                dailyDate,     // challenge_date = 当前日期
+                
+                // ✅ 显示总积分
                 displayTotal,
                 userData.challengeUsed || 0,
                 now,
@@ -127,15 +132,18 @@ export async function onRequest(context) {
             );
         }
 
-        // 3. 保存排位赛历史记录
+        // 3. 保存排位赛历史记录（限制最近30条）
         if (userData.rankHistory && userData.rankHistory.length > 0) {
+            // 先删除旧记录，保留最近30条
             statements.push(
                 db.prepare(`
                     DELETE FROM quiz_history WHERE user_id = ? AND mode = 'ranked'
                 `).bind(userId)
             );
             
-            for (const entry of userData.rankHistory) {
+            // 只保留最近30条
+            const historyToSave = userData.rankHistory.slice(-30);
+            for (const entry of historyToSave) {
                 if (entry && entry.score !== undefined && entry.date) {
                     statements.push(
                         db.prepare(`
@@ -146,7 +154,7 @@ export async function onRequest(context) {
             }
         }
 
-        // 4. 保存挑战赛历史记录
+        // 4. 保存挑战赛历史记录（限制最近30条）
         if (userData.challengeHistory && userData.challengeHistory.length > 0) {
             statements.push(
                 db.prepare(`
@@ -154,7 +162,8 @@ export async function onRequest(context) {
                 `).bind(userId)
             );
             
-            for (const entry of userData.challengeHistory) {
+            const historyToSave = userData.challengeHistory.slice(-30);
+            for (const entry of historyToSave) {
                 if (entry && entry.score !== undefined && entry.date) {
                     statements.push(
                         db.prepare(`
