@@ -711,6 +711,7 @@
             return 3;
         }
 
+        // 该函数已不再使用，保留以防万一
         async function useRankDaily(name) {
             if (!name) return { success: false, remain: 0, message: '用户名为空' };
             var today = DateUtils.getTodayUTC();
@@ -1450,7 +1451,7 @@
         }
 
         // ============================================================
-        //  ✅ 答题结束 - 更新今日各模式得分
+        //  ✅ 答题结束 - 更新今日各模式得分（已修复排位次数问题）
         // ============================================================
         async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
@@ -1471,17 +1472,19 @@
                 // 更新今日热身得分（取最高）
                 currentUser.todayWarmupScore = Math.max(currentUser.todayWarmupScore || 0, userScore);
             } else if (mode === 'ranked') {
-                var result = await useRankDaily(currentUser.name);
-                if (!result.success) {
-                    alert('⛔ ' + result.message);
+                // ===== 修复：不再调用 useRankDaily API，直接本地更新 =====
+                let used = (currentUser.rankDaily && currentUser.rankDaily.date === today) ? (currentUser.rankDaily.used || 0) : 0;
+                used += 1;
+                if (used > 3) {
+                    alert('⛔ 排位赛次数已用完，无法保存本次成绩');
                     showPage('mainPage');
                     updateMainUI();
                     return;
                 }
-                
-                currentUser.rankDaily = { date: today, used: result.used };
-                currentUser.rankRemain = result.remain;
+                currentUser.rankDaily = { date: today, used: used };
+                currentUser.rankRemain = 3 - used;
 
+                // 更新历史最高分
                 if (userScore > (currentUser.rankScore || 0)) {
                     currentUser.rankScore = userScore;
                 }
@@ -1490,7 +1493,8 @@
 
                 // 更新今日排位得分（取最高）
                 currentUser.todayRankScore = Math.max(currentUser.todayRankScore || 0, userScore);
-                console.log('✅ 排位赛已保存: 今日已用 ' + result.used + ' 次，剩余 ' + result.remain + ' 次');
+
+                console.log('✅ 排位赛已记录: 今日已用 ' + used + ' 次，剩余 ' + currentUser.rankRemain + ' 次');
 
             } else if (mode === 'challenge') {
                 currentUser.challengeDate = today;
