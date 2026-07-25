@@ -23,7 +23,7 @@ export async function onRequest(context) {
         const today = new Date().toISOString().split('T')[0];
 
         for (const user of results) {
-            // ✅ 处理每日积分重置
+            // 处理每日积分重置（只重置每日积分）
             if (user.daily_date !== today) {
                 user.daily_warmup_score = 0;
                 user.daily_rank_score = 0;
@@ -32,7 +32,7 @@ export async function onRequest(context) {
                 user.daily_date = today;
             }
             
-            // ✅ 计算显示总积分
+            // 计算显示总积分 = 每日积分 + 历史总积分
             user.total_score = (user.daily_total_score || 0) + (user.total_total_score || 0);
 
             // 从云端查询今日排位赛已用次数

@@ -48,7 +48,7 @@ export async function onRequest(context) {
             FROM users WHERE id = ?
         `).bind(id).first();
 
-        // ✅ 设置显示用的总积分
+        // 设置显示用的总积分
         user.total_score = (user.daily_total_score || 0) + (user.total_total_score || 0);
         user.rank_remain = 3;
 
