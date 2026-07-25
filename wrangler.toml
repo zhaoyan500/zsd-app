@@ -24,3 +24,12 @@ ALTER TABLE users ADD COLUMN total_score INTEGER DEFAULT 0;
 UPDATE users SET total_score = total_score_old;
 CREATE INDEX IF NOT EXISTS idx_users_daily_score ON users(daily_score_date);
 """
+
+[[migrations]]
+tag = "v3"
+sql = """
+ALTER TABLE users ADD COLUMN today_warmup_score INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN today_rank_score INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN today_challenge_score INTEGER DEFAULT 0;
+UPDATE users SET today_warmup_score = 0, today_rank_score = 0, today_challenge_score = 0;
+"""
