@@ -18,7 +18,7 @@ export async function onRequest(context) {
         `).all();
 
         const results = users.results || [];
-        const today = new Date().toDateString();
+        const today = new Date().toISOString().split('T')[0];
 
         for (const user of results) {
             let rankDaily = await db.prepare(`
@@ -33,7 +33,6 @@ export async function onRequest(context) {
             user.rank_remain = Math.max(0, 3 - used);
             user.rankDaily = { date: today, used: used };
             
-            // 如果每日积分日期不是今天，重置每日积分显示为0
             if (user.daily_score_date !== today) {
                 user.daily_score = 0;
             }
