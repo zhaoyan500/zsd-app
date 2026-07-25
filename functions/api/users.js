@@ -16,14 +16,14 @@ export async function onRequest(context) {
                    warmup_score, warmup_date, rank_score, challenge_score, challenge_date,
                    total_score, challenge_used, version, created_at
             FROM users
-            ORDER BY total_total_score DESC, daily_total_score DESC
+            ORDER BY (daily_total_score + total_total_score) DESC
         `).all();
 
         const results = users.results || [];
         const today = new Date().toISOString().split('T')[0];
 
         for (const user of results) {
-            // 处理每日积分重置
+            // ✅ 处理每日积分重置
             if (user.daily_date !== today) {
                 user.daily_warmup_score = 0;
                 user.daily_rank_score = 0;
@@ -31,6 +31,9 @@ export async function onRequest(context) {
                 user.daily_total_score = 0;
                 user.daily_date = today;
             }
+            
+            // ✅ 计算显示总积分
+            user.total_score = (user.daily_total_score || 0) + (user.total_total_score || 0);
 
             // 从云端查询今日排位赛已用次数
             let rankDaily = await db.prepare(`
