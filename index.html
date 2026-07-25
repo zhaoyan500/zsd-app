@@ -618,7 +618,7 @@
         }
 
         // ============================================================
-        //  ✅ 数据适配器 - 正确映射所有积分字段
+        //  ✅ 修复：数据适配器 - 正确映射所有积分字段
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
@@ -1133,7 +1133,7 @@
         }
 
         // ============================================================
-        //  ✅ 保存用户数据到云端
+        //  ✅ 修复：保存用户数据到云端
         // ============================================================
         async function saveUserToCloud(user) {
             try {
@@ -1143,17 +1143,20 @@
                     unit: user.unit,
                     version: user.version || 1,
 
+                    // ✅ 每日积分（独立）
                     dailyWarmupScore: user.dailyWarmupScore || 0,
                     dailyRankScore: user.dailyRankScore || 0,
                     dailyChallengeScore: user.dailyChallengeScore || 0,
                     dailyTotalScore: user.dailyTotalScore || 0,
                     dailyDate: user.dailyDate || DateUtils.getTodayUTC(),
 
+                    // ✅ 历史总积分（独立）
                     totalWarmupScore: user.totalWarmupScore || 0,
                     totalRankScore: user.totalRankScore || 0,
                     totalChallengeScore: user.totalChallengeScore || 0,
                     totalTotalScore: user.totalTotalScore || 0,
 
+                    // ✅ 兼容字段（仅用于显示，使用每日积分）
                     warmupScore: user.dailyWarmupScore || 0,
                     warmupDate: user.dailyDate || '',
                     rankScore: user.dailyRankScore || 0,
@@ -1548,7 +1551,7 @@
         }
 
         // ============================================================
-        //  ✅ 答题结束 - 双轨制积分独立累加
+        //  ✅ 修复：答题结束 - 双轨制积分独立累加
         // ============================================================
         async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
