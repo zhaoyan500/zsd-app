@@ -33,3 +33,17 @@ ALTER TABLE users ADD COLUMN today_rank_score INTEGER DEFAULT 0;
 ALTER TABLE users ADD COLUMN today_challenge_score INTEGER DEFAULT 0;
 UPDATE users SET today_warmup_score = 0, today_rank_score = 0, today_challenge_score = 0;
 """
+
+[[migrations]]
+tag = "v4"
+sql = """
+CREATE TABLE IF NOT EXISTS daily_score_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    daily_score INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_score_history_user_date ON daily_score_history(user_id, date);
+"""
