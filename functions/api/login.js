@@ -37,9 +37,8 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '密码错误' }), { status: 401, headers });
         }
 
-        const today = new Date().toISOString().split('T')[0]; // UTC日期
+        const today = new Date().toISOString().split('T')[0];
 
-        // 如果每日积分日期不是今天，重置今日各模式得分和每日积分
         if (user.daily_score_date !== today) {
             user.daily_score = 0;
             user.daily_score_date = today;
@@ -57,7 +56,6 @@ export async function onRequest(context) {
             `).bind(today, user.id).run();
         }
 
-        // 获取排位赛今日使用次数
         let rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
         `).bind(user.id, today).first();
