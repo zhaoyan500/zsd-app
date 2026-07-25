@@ -4,16 +4,23 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "D1_DB"
 database_name = "zsd-db"
-database_id = "your-database-id-here"  # 需要替换为实际 ID
+database_id = "your-database-id-here"
 
-# 数据库迁移（需要创建 migrations 文件夹）
 [[migrations]]
 tag = "v1"
 sql = """
--- 添加 version 字段
 ALTER TABLE users ADD COLUMN version INTEGER DEFAULT 1;
-
--- 创建索引优化查询
 CREATE INDEX IF NOT EXISTS idx_rank_daily_user_date ON rank_daily(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_quiz_history_user_mode ON quiz_history(user_id, mode);
+"""
+
+[[migrations]]
+tag = "v2"
+sql = """
+ALTER TABLE users ADD COLUMN daily_score INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN daily_score_date TEXT DEFAULT '';
+ALTER TABLE users RENAME COLUMN total_score TO total_score_old;
+ALTER TABLE users ADD COLUMN total_score INTEGER DEFAULT 0;
+UPDATE users SET total_score = total_score_old;
+CREATE INDEX IF NOT EXISTS idx_users_daily_score ON users(daily_score_date);
 """
