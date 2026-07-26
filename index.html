@@ -214,10 +214,8 @@
                         <p class="text-2xl font-bold text-primary" id="mainTotalScore">0</p>
                     </div>
                 </div>
+                <!-- 只保留排位剩余和今日数据 -->
                 <div class="flex gap-2 mt-3 text-xs text-gray-500 flex-wrap">
-                    <span>🔥 热身: <b id="mainWarmup">0</b></span>
-                    <span>⚔️ 排位: <b id="mainRank">0</b></span>
-                    <span>🏆 挑战: <b id="mainChallenge">0</b></span>
                     <span class="ml-auto">
                         排位剩余: <b id="mainRankRemain">3</b>次
                         <span id="rankBadge" class="rank-remain-badge green">可用</span>
@@ -1082,7 +1080,7 @@
         }
 
         // ============================================================
-        //  主界面更新（显示今日最高和总积分）
+        //  主界面更新（只显示今日数据）
         // ============================================================
         function updateMainUI() {
             if (!currentUser) return;
@@ -1092,10 +1090,6 @@
             document.getElementById('mainUserName').textContent = currentUser.name;
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = currentUser.totalScore || 0;
-            // 历史最高（仅供展示）
-            document.getElementById('mainWarmup').textContent = currentUser.warmupScore || 0;
-            document.getElementById('mainRank').textContent = currentUser.rankScore || 0;
-            document.getElementById('mainChallenge').textContent = currentUser.challengeScore || 0;
 
             // 今日数据
             document.getElementById('mainTodayWarmup').textContent = currentUser.todayWarmup || 0;
