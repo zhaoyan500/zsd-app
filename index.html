@@ -672,7 +672,6 @@
                 warmupDate: user.warmupDate || user.warmup_date || '',
                 rankScore: user.rankScore || user.rank_score || 0,
                 challengeScore: user.challengeScore || user.challenge_score || 0,
-                // 今日数据：优先读取 camelCase（本地存储），再尝试 snake_case（后端返回）
                 todayWarmup: user.todayWarmup || user.today_warmup_score || user.todayWarmupScore || 0,
                 todayRank: user.todayRank || user.today_rank_score || user.todayRankScore || 0,
                 todayChallenge: user.todayChallenge || user.today_challenge_score || user.todayChallengeScore || 0,
@@ -1076,18 +1075,15 @@
                     id: user.id,
                     name: user.name,
                     unit: user.unit,
-                    // 历史最高（仅展示）
                     warmupScore: user.warmupScore || 0,
                     warmupDate: user.warmupDate || '',
                     rankScore: user.rankScore || 0,
                     challengeScore: user.challengeScore || 0,
-                    // 今日最高分
                     todayWarmup: user.todayWarmup || 0,
                     todayRank: user.todayRank || 0,
                     todayChallenge: user.todayChallenge || 0,
                     todayTotal: user.todayTotal || 0,
                     dailyScoreDate: user.dailyScoreDate || DateUtils.getTodayUTC(),
-                    // 总积分
                     totalScore: user.totalScore || 0,
                     rankDaily: user.rankDaily || { date: DateUtils.getTodayUTC(), used: 0 },
                     challengeUsed: user.challengeUsed || 0,
@@ -1155,7 +1151,6 @@
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = currentUser.totalScore || 0;
 
-            // 今日数据
             document.getElementById('mainTodayWarmup').textContent = currentUser.todayWarmup || 0;
             document.getElementById('mainTodayRank').textContent = currentUser.todayRank || 0;
             document.getElementById('mainTodayChallenge').textContent = currentUser.todayChallenge || 0;
@@ -1252,14 +1247,12 @@
                 }
             }
 
-            // 获取题库
             let questions = null;
             try {
                 const resp = await fetch(API_BASE + '/questions?mode=' + mode);
                 if (resp.ok) {
                     const data = await resp.json();
                     if (Array.isArray(data) && data.length > 0) {
-                        // 将数据库返回的格式转换为前端使用的格式
                         questions = data.map(q => ({
                             q: q.question,
                             a: q.correct,
@@ -1276,16 +1269,13 @@
                 console.warn('从服务器获取题库失败，使用默认题库', e);
             }
             if (!questions || questions.length === 0) {
-                // 使用默认题库
                 questions = getDefaultQuiz(mode);
-                // 如有必要可将默认题库同步到数据库，但由管理员手动触发
             }
             quizQuestions = questions;
 
             currentMode = mode;
             var expected = { warmup: 10, ranked: 15, challenge: 20 };
             if (!quizQuestions || quizQuestions.length !== expected[mode]) {
-                // 如果数量不符，回退到硬编码
                 quizQuestions = getDefaultQuiz(mode);
             }
             quizIndex = 0;
@@ -1501,7 +1491,6 @@
             var mode = currentMode;
             var score = userScore;
 
-            // 更新今日最高分（每个赛制独立）
             if (mode === 'warmup') {
                 if (score > (currentUser.todayWarmup || 0)) {
                     currentUser.todayWarmup = score;
@@ -1538,7 +1527,6 @@
                 }
             }
 
-            // 计算今日总积分
             var todayTotal = (currentUser.todayWarmup || 0) + (currentUser.todayRank || 0) + (currentUser.todayChallenge || 0);
             currentUser.todayTotal = todayTotal;
             currentUser.dailyScoreDate = today;
@@ -1553,7 +1541,6 @@
                 console.error('❌ 保存失败:', e);
                 alert('数据保存失败，请检查网络后重试');
             }
-            // 确保本地存储更新
             setStorage('currentUser', currentUser);
 
             document.getElementById('resName').textContent = currentUser.name;
@@ -1842,7 +1829,6 @@
                     rankBox.innerHTML = html2;
 
                 } else {
-                    // 周榜 / 月榜：调用 /api/rank/period
                     teamTotalRank.classList.add('hidden');
                     var period = rankFilter === 'week' ? 'week' : 'month';
                     try {
@@ -2047,14 +2033,11 @@
             }
         }
 
-        // 同步默认题库到数据库（可选功能）
         async function syncDefaultQuiz() {
             if (!confirm('将硬编码的默认题库同步到数据库（会覆盖已有题目）？')) return;
             const mode = currentQuestionMode;
             const defaultQuestions = getDefaultQuiz(mode);
-            // 先清空该模式所有题目
             try {
-                // 获取现有题目ID列表
                 const respList = await fetch(API_BASE + '/questions?mode=' + mode + '&adminKey=' + ADMIN_PWD);
                 const list = await respList.json();
                 if (Array.isArray(list)) {
@@ -2062,7 +2045,6 @@
                         await fetch(API_BASE + '/questions?id=' + q.id + '&adminKey=' + ADMIN_PWD, { method: 'DELETE' });
                     }
                 }
-                // 逐个添加默认题目
                 for (const q of defaultQuestions) {
                     const payload = {
                         mode: mode,
@@ -2194,7 +2176,7 @@
         }
 
         // ============================================================
-        //  初始化（修复刷新丢失今日积分）
+        //  初始化（修复跨天重置问题）
         // ============================================================
         function init() {
             if (!getStorage('adminConfig', null)) {
@@ -2217,9 +2199,8 @@
                 try {
                     currentUser = normalizeUser(savedUser);
                     var today = DateUtils.getTodayUTC();
-                    // 只有当 dailyScoreDate 存在且不等于今天时，才重置今日数据
-                    // 如果 dailyScoreDate 为空，视为今天，不重置
-                    if (currentUser.dailyScoreDate && currentUser.dailyScoreDate !== today) {
+                    // 如果 dailyScoreDate 为空或者不等于今天，则重置今日数据
+                    if (!currentUser.dailyScoreDate || currentUser.dailyScoreDate !== today) {
                         currentUser.todayWarmup = 0;
                         currentUser.todayRank = 0;
                         currentUser.todayChallenge = 0;
@@ -2232,7 +2213,6 @@
                     applyRankDataToUser(currentUser);
                     showPage('mainPage');
                     updateMainUI();
-                    // 确保保存更新后的数据
                     setStorage('currentUser', currentUser);
                 } catch (e) {
                     console.error('恢复用户失败:', e);
