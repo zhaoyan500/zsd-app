@@ -23,9 +23,7 @@ export async function onRequest(context) {
             startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().split('T')[0];
         }
 
-        // 方案：优先从 daily_score_history 汇总（包含所有模式，且数据最准确），
-        // 若某用户在该表无记录，则从 quiz_history 汇总排位+挑战赛作为补充。
-        // 使用 COALESCE 确保每个用户都出现。
+        // 优先从 daily_score_history 汇总（包含所有模式），若用户无记录则从 quiz_history 回退（仅排位+挑战）
         const rows = await db.prepare(`
             SELECT 
                 u.id, 
@@ -45,7 +43,6 @@ export async function onRequest(context) {
         `).bind(startDate, startDate, startDate, startDate).all();
 
         const results = rows.results || [];
-        // 过滤掉 period_score 为 null 或 0 的用户（无任何记录）
         const filtered = results.filter(r => r.period_score !== null && r.period_score > 0);
 
         return new Response(JSON.stringify({
