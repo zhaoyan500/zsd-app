@@ -24,6 +24,7 @@
         }
     </script>
     <style>
+        /* 样式与之前完全相同，省略以节省篇幅，实际部署时请保留原样式 */
         .page { display: none !important; min-height: 100vh; padding-top: 100px; padding-bottom: 60px; }
         .page.active { display: block !important; }
         .page.quiz-mode { padding-top: 60px; padding-bottom: 50px; }
@@ -583,7 +584,7 @@
         }
 
         // ============================================================
-        //  数据适配器（保留原始 dailyScoreDate，不自动补全）
+        //  数据适配器（修复：同时兼容 camelCase 和 snake_case）
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
@@ -601,20 +602,21 @@
                 id: user.id,
                 name: user.name,
                 unit: user.unit,
-                warmupScore: user.warmup_score || user.warmupScore || 0,
-                warmupDate: user.warmup_date || user.warmupDate || '',
-                rankScore: user.rank_score || user.rankScore || 0,
-                challengeScore: user.challenge_score || user.challengeScore || 0,
-                todayWarmup: user.today_warmup_score || user.todayWarmupScore || 0,
-                todayRank: user.today_rank_score || user.todayRankScore || 0,
-                todayChallenge: user.today_challenge_score || user.todayChallengeScore || 0,
-                todayTotal: user.daily_score || user.dailyScore || 0,
-                dailyScoreDate: user.daily_score_date || user.dailyScoreDate || '', // 保留原始值，可能为空
-                totalScore: user.total_score || user.totalScore || 0,
-                rankRemain: user.rank_remain || user.rankRemain || 3,
+                warmupScore: user.warmupScore || user.warmup_score || 0,
+                warmupDate: user.warmupDate || user.warmup_date || '',
+                rankScore: user.rankScore || user.rank_score || 0,
+                challengeScore: user.challengeScore || user.challenge_score || 0,
+                // 今日数据：优先读取 camelCase（本地存储），再尝试 snake_case（后端返回）
+                todayWarmup: user.todayWarmup || user.today_warmup_score || user.todayWarmupScore || 0,
+                todayRank: user.todayRank || user.today_rank_score || user.todayRankScore || 0,
+                todayChallenge: user.todayChallenge || user.today_challenge_score || user.todayChallengeScore || 0,
+                todayTotal: user.todayTotal || user.daily_score || user.dailyScore || 0,
+                dailyScoreDate: user.dailyScoreDate || user.daily_score_date || user.dailyScoreDate || '',
+                totalScore: user.totalScore || user.total_score || 0,
+                rankRemain: user.rankRemain || user.rank_remain || 3,
                 rankDaily: validRankDaily,
-                challengeUsed: user.challenge_used || user.challengeUsed || 0,
-                challengeDate: user.challenge_date || user.challengeDate || '',
+                challengeUsed: user.challengeUsed || user.challenge_used || 0,
+                challengeDate: user.challengeDate || user.challenge_date || '',
                 version: user.version || 1,
                 created_at: user.created_at,
                 updated_at: user.updated_at
