@@ -25,7 +25,7 @@ export async function onRequest(context) {
         const user = await db.prepare(`
             SELECT id, version, daily_score, daily_score_date, 
                    today_warmup_score, today_rank_score, today_challenge_score,
-                   total_score
+                   total_score, challenge_date, challenge_used
             FROM users WHERE name = ?
         `).bind(name).first();
 
@@ -41,6 +41,13 @@ export async function onRequest(context) {
                 error: '数据已被其他操作修改，请刷新后重试',
                 code: 'CONFLICT'
             }), { status: 409, headers });
+        }
+
+        // ✅ 修复：如果前端传来的挑战赛日期不是今天，强制重置
+        if (userData.challengeDate !== today) {
+            userData.challengeUsed = 0;
+            userData.challengeDate = today;
+            userData.todayChallengeScore = 0;
         }
 
         let todayWarmup = userData.todayWarmupScore !== undefined ? userData.todayWarmupScore : user.today_warmup_score;
@@ -83,7 +90,7 @@ export async function onRequest(context) {
                 userData.warmupDate || '',
                 userData.rankScore || 0,
                 userData.challengeScore || 0,
-                userData.challengeDate || '',
+                userData.challengeDate || today,
                 userData.challengeUsed || 0,
                 todayWarmup,
                 todayRank,
@@ -144,7 +151,7 @@ export async function onRequest(context) {
             }
         }
 
-        // ===== 新增：记录每日积分历史 =====
+        // 记录每日积分历史
         statements.push(
             db.prepare(`
                 INSERT INTO daily_score_history (user_id, date, daily_score)

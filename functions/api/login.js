@@ -39,6 +39,7 @@ export async function onRequest(context) {
 
         const today = new Date().toISOString().split('T')[0];
 
+        // === 重置每日积分（若日期非今日） ===
         if (user.daily_score_date !== today) {
             user.daily_score = 0;
             user.daily_score_date = today;
@@ -56,6 +57,22 @@ export async function onRequest(context) {
             `).bind(today, user.id).run();
         }
 
+        // ✅ 新增：重置挑战赛使用次数（若日期非今日）
+        if (user.challenge_date !== today) {
+            user.challenge_used = 0;
+            user.challenge_date = today;
+            // 同时重置今日挑战赛得分，避免跨天累加
+            user.today_challenge_score = 0;
+            await db.prepare(`
+                UPDATE users SET 
+                    challenge_used = 0, 
+                    challenge_date = ?,
+                    today_challenge_score = 0
+                WHERE id = ?
+            `).bind(today, user.id).run();
+        }
+
+        // 排位赛每日记录
         let rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
         `).bind(user.id, today).first();
