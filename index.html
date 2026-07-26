@@ -583,7 +583,7 @@
         }
 
         // ============================================================
-        //  数据适配器（修正：增加今日数据字段）
+        //  数据适配器（修正：当 dailyScoreDate 不存在时默认今天）
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
@@ -597,24 +597,25 @@
             if (rankDaily && typeof rankDaily === 'object' && rankDaily.date && rankDaily.used !== undefined) {
                 validRankDaily = rankDaily;
             }
+            // 关键修复：如果 dailyScoreDate 不存在，默认设为今天，避免刷新时被重置
+            var dailyScoreDate = user.daily_score_date || user.dailyScoreDate || '';
+            if (!dailyScoreDate) {
+                dailyScoreDate = DateUtils.getTodayUTC();
+            }
             return {
                 id: user.id,
                 name: user.name,
                 unit: user.unit,
-                // 历史最高（仅展示）
                 warmupScore: user.warmup_score || user.warmupScore || 0,
                 warmupDate: user.warmup_date || user.warmupDate || '',
                 rankScore: user.rank_score || user.rankScore || 0,
                 challengeScore: user.challenge_score || user.challengeScore || 0,
-                // 今日最高（用于计算每日积分）
                 todayWarmup: user.today_warmup_score || user.todayWarmupScore || 0,
                 todayRank: user.today_rank_score || user.todayRankScore || 0,
                 todayChallenge: user.today_challenge_score || user.todayChallengeScore || 0,
                 todayTotal: user.daily_score || user.dailyScore || 0,
-                dailyScoreDate: user.daily_score_date || user.dailyScoreDate || '',
-                // 总积分（历史每日积分累计）
+                dailyScoreDate: dailyScoreDate,
                 totalScore: user.total_score || user.totalScore || 0,
-                // 排位赛
                 rankRemain: user.rank_remain || user.rankRemain || 3,
                 rankDaily: validRankDaily,
                 challengeUsed: user.challenge_used || user.challengeUsed || 0,
