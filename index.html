@@ -1465,6 +1465,8 @@
                 console.error('❌ 保存失败:', e);
                 alert('数据保存失败，请检查网络后重试');
             }
+            // 确保本地存储更新
+            setStorage('currentUser', currentUser);
 
             document.getElementById('resName').textContent = currentUser.name;
             document.getElementById('resUnit').textContent = currentUser.unit;
@@ -1918,7 +1920,7 @@
         }
 
         // ============================================================
-        //  初始化
+        //  初始化（修复刷新丢失今日积分）
         // ============================================================
         function init() {
             if (!getStorage('adminConfig', null)) {
@@ -1940,11 +1942,26 @@
             if (savedUser) {
                 try {
                     currentUser = normalizeUser(savedUser);
+                    var today = DateUtils.getTodayUTC();
+                    // 如果保存的日期不是今天，重置今日数据（但保留总积分和历史最高）
+                    if (currentUser.dailyScoreDate !== today) {
+                        currentUser.todayWarmup = 0;
+                        currentUser.todayRank = 0;
+                        currentUser.todayChallenge = 0;
+                        currentUser.todayTotal = 0;
+                        currentUser.dailyScoreDate = today;
+                        currentUser.challengeUsed = 0;
+                        currentUser.challengeDate = today;
+                        // 排位赛次数由 applyRankDataToUser 处理
+                    }
                     applyRankDataToUser(currentUser);
                     showPage('mainPage');
                     updateMainUI();
+                    // 确保保存更新后的数据
+                    setStorage('currentUser', currentUser);
                 } catch (e) {
                     console.error('恢复用户失败:', e);
+                    localStorage.removeItem('currentUser');
                 }
             }
 
