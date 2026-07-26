@@ -57,11 +57,10 @@ export async function onRequest(context) {
             `).bind(today, user.id).run();
         }
 
-        // ✅ 新增：重置挑战赛使用次数（若日期非今日）
+        // 重置挑战赛使用次数（若日期非今日）
         if (user.challenge_date !== today) {
             user.challenge_used = 0;
             user.challenge_date = today;
-            // 同时重置今日挑战赛得分，避免跨天累加
             user.today_challenge_score = 0;
             await db.prepare(`
                 UPDATE users SET 

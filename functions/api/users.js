@@ -10,8 +10,8 @@ export async function onRequest(context) {
         const db = env.D1_DB;
 
         const users = await db.prepare(`
-            SELECT id, name, unit, warmup_score, rank_score, challenge_score, 
-                   daily_score, daily_score_date, total_score,
+            SELECT id, name, unit, 
+                   warmup_score, rank_score, challenge_score, total_score,
                    warmup_date, challenge_date, challenge_used, version, created_at
             FROM users
             ORDER BY total_score DESC
@@ -32,10 +32,6 @@ export async function onRequest(context) {
             const used = rankDaily.used || 0;
             user.rank_remain = Math.max(0, 3 - used);
             user.rankDaily = { date: today, used: used };
-            
-            if (user.daily_score_date !== today) {
-                user.daily_score = 0;
-            }
         }
 
         return new Response(JSON.stringify(results), { headers });

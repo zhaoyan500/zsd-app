@@ -29,34 +29,26 @@ export async function onRequest(context) {
         const now = new Date().toISOString();
         const today = new Date().toISOString().split('T')[0];
 
+        // 初始化所有积分为 0
         await db.prepare(`
             INSERT INTO users (
                 id, name, unit, pwd, 
-                daily_warmup_score, daily_rank_score, daily_challenge_score, daily_total_score, daily_date,
-                total_warmup_score, total_rank_score, total_challenge_score, total_total_score,
-                warmup_score, warmup_date, rank_score, challenge_score, challenge_date,
-                total_score, challenge_used, version, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 0, 0, 0, 0, ?, 0, 0, 0, 0, 0, '', 0, 0, '', 0, 0, 1, ?, ?)
+                warmup_score, rank_score, challenge_score, total_score,
+                today_warmup_score, today_rank_score, today_challenge_score,
+                daily_score, daily_score_date,
+                warmup_date, challenge_date, challenge_used, 
+                version, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, ?, '', '', 0, 1, ?, ?)
         `).bind(id, name, unit, pwd, today, now, now).run();
 
         const user = await db.prepare(`
             SELECT id, name, unit, 
-                   daily_warmup_score, daily_rank_score, daily_challenge_score, daily_total_score, daily_date,
-                   total_warmup_score, total_rank_score, total_challenge_score, total_total_score,
-                   warmup_score, warmup_date, rank_score, challenge_score, challenge_date,
-                   total_score, challenge_used, version, created_at
+                   warmup_score, rank_score, challenge_score, total_score,
+                   warmup_date, challenge_date, challenge_used, version, created_at
             FROM users WHERE id = ?
         `).bind(id).first();
 
-        // ✅ 初始化排位赛记录
-        await db.prepare(`
-            INSERT INTO rank_daily (user_id, date, used) VALUES (?, ?, 0)
-        `).bind(id, today).run();
-
-        // ✅ 设置显示用的总积分
-        user.total_score = (user.daily_total_score || 0) + (user.total_total_score || 0);
-        user.rank_remain = 3;
-        user.rankDaily = { date: today, used: 0 };
+        user.rank_remain = 3; // 新用户默认剩余3次
 
         return new Response(JSON.stringify({ success: true, user: user }), { headers });
     } catch (err) {

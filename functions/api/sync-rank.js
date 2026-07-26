@@ -19,10 +19,8 @@ export async function onRequest(context) {
         }
 
         const db = env.D1_DB;
-        // ✅ 修复：统一使用 UTC ISO 日期
         const today = new Date().toISOString().split('T')[0];
 
-        // 获取用户ID
         const user = await db.prepare(`
             SELECT id FROM users WHERE name = ?
         `).bind(name).first();
@@ -31,13 +29,11 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
 
-        // 查询今日排位赛已用次数
         let rankDaily = await db.prepare(`
             SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
         `).bind(user.id, today).first();
 
         if (!rankDaily) {
-            // 没有记录，创建一条
             await db.prepare(`
                 INSERT INTO rank_daily (user_id, date, used) VALUES (?, ?, 0)
             `).bind(user.id, today).run();
