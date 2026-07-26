@@ -664,6 +664,8 @@
             if (rankDaily && typeof rankDaily === 'object' && rankDaily.date && rankDaily.used !== undefined) {
                 validRankDaily = rankDaily;
             }
+            // 确保 dailyScoreDate 被正确读取（优先使用 daily_score_date）
+            var dailyScoreDate = user.dailyScoreDate || user.daily_score_date || '';
             return {
                 id: user.id,
                 name: user.name,
@@ -676,7 +678,7 @@
                 todayRank: user.todayRank || user.today_rank_score || user.todayRankScore || 0,
                 todayChallenge: user.todayChallenge || user.today_challenge_score || user.todayChallengeScore || 0,
                 todayTotal: user.todayTotal || user.daily_score || user.dailyScore || 0,
-                dailyScoreDate: user.dailyScoreDate || user.daily_score_date || user.dailyScoreDate || '',
+                dailyScoreDate: dailyScoreDate,
                 totalScore: user.totalScore || user.total_score || 0,
                 rankRemain: user.rankRemain || user.rank_remain || 3,
                 rankDaily: validRankDaily,
@@ -813,13 +815,7 @@
             if (!user || !user.name) return;
             var today = DateUtils.getTodayUTC();
             
-            if (user.rankDaily && user.rankDaily.date === today) {
-                var used = parseInt(user.rankDaily.used) || 0;
-                user.rankRemain = Math.max(0, 3 - used);
-                setRankDailyCache(user.name, user.rankDaily);
-                return;
-            }
-            
+            // 优先从缓存获取，如果缓存不存在或日期不是今天，则重置
             var data = getRankDailyCache(user.name);
             if (!data || data.date !== today) {
                 data = { date: today, used: 0 };
@@ -1145,7 +1141,20 @@
         function updateMainUI() {
             if (!currentUser) return;
 
-            applyRankDataToUser(currentUser);
+            // 防御性检查：若日期变更则重置今日数据
+            var today = DateUtils.getTodayUTC();
+            if (currentUser.dailyScoreDate !== today) {
+                currentUser.todayWarmup = 0;
+                currentUser.todayRank = 0;
+                currentUser.todayChallenge = 0;
+                currentUser.todayTotal = 0;
+                currentUser.dailyScoreDate = today;
+                currentUser.challengeUsed = 0;
+                currentUser.challengeDate = today;
+                // 排位赛次数由 applyRankDataToUser 处理
+                applyRankDataToUser(currentUser);
+                setStorage('currentUser', currentUser);
+            }
 
             document.getElementById('mainUserName').textContent = currentUser.name;
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
@@ -2178,7 +2187,7 @@
         // ============================================================
         //  初始化（修复跨天重置问题）
         // ============================================================
-        function init() {
+        async function init() {
             if (!getStorage('adminConfig', null)) {
                 setStorage('adminConfig', {
                     warmup: true,
@@ -2208,9 +2217,12 @@
                         currentUser.dailyScoreDate = today;
                         currentUser.challengeUsed = 0;
                         currentUser.challengeDate = today;
-                        // 排位赛次数由 applyRankDataToUser 处理
+                        // 排位赛次数从服务器同步
+                        await syncRankDailyFromCloud(currentUser.name);
+                    } else {
+                        // 即使日期相同，也重新应用排位赛数据（确保缓存一致）
+                        applyRankDataToUser(currentUser);
                     }
-                    applyRankDataToUser(currentUser);
                     showPage('mainPage');
                     updateMainUI();
                     setStorage('currentUser', currentUser);
