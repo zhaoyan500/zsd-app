@@ -650,7 +650,7 @@
         }
 
         // ============================================================
-        //  数据适配器（修复：同时兼容 camelCase 和 snake_case）
+        //  数据适配器（修复：确保 dailyScoreDate 正确读取）
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
@@ -664,7 +664,6 @@
             if (rankDaily && typeof rankDaily === 'object' && rankDaily.date && rankDaily.used !== undefined) {
                 validRankDaily = rankDaily;
             }
-            // 确保 dailyScoreDate 被正确读取（优先使用 daily_score_date）
             var dailyScoreDate = user.dailyScoreDate || user.daily_score_date || '';
             return {
                 id: user.id,
@@ -702,14 +701,13 @@
         }
 
         // ============================================================
-        //  排位赛数据管理
+        //  排位赛数据管理（强制重置）
         // ============================================================
         async function syncRankDailyFromCloud(name) {
             if (!name) return null;
             try {
                 var result = await apiCall('/sync-rank', 'POST', { name: name });
                 if (result && result.rankDaily) {
-                    var today = DateUtils.getTodayUTC();
                     var data = result.rankDaily;
                     if (currentUser && currentUser.name === name) {
                         currentUser.rankDaily = data;
@@ -743,18 +741,13 @@
         async function getRankRemainCount(name) {
             if (!name) return 3;
             var today = DateUtils.getTodayUTC();
-            
-            if (currentUser && currentUser.name === name && currentUser.rankDaily && currentUser.rankDaily.date === today) {
-                var used = parseInt(currentUser.rankDaily.used) || 0;
-                return Math.max(0, 3 - used);
-            }
-            
+            // 先尝试从缓存读取
             var data = getRankDailyCache(name);
             if (data && data.date === today) {
                 var used = parseInt(data.used) || 0;
                 return Math.max(0, 3 - used);
             }
-            
+            // 缓存无效，从服务器获取
             try {
                 var result = await apiCall('/sync-rank', 'POST', { name: name });
                 if (result && result.rankDaily && result.rankDaily.date === today) {
@@ -766,44 +759,33 @@
                     }
                     return Math.max(0, 3 - used);
                 }
-            } catch(e) {
-                console.error('获取排位赛次数失败:', e);
-            }
-            
+            } catch(e) { /* ignore */ }
+            // 完全失败，返回默认3
             return 3;
         }
 
         async function useRankDaily(name) {
             if (!name) return { success: false, remain: 0, message: '用户名为空' };
-            var today = DateUtils.getTodayUTC();
-            
             try {
                 var remain = await getRankRemainCount(name);
                 if (remain <= 0) {
                     return { success: false, remain: 0, message: '今日排位赛次数已用完' };
                 }
-                
                 var result = await apiCall('/use-rank', 'POST', { name: name });
-                
                 if (result && result.error) {
                     return { success: false, remain: 0, message: result.error };
                 }
-                
                 if (result && result.rankDaily) {
                     var data = result.rankDaily;
                     var used = parseInt(data.used) || 0;
                     var newRemain = Math.max(0, 3 - used);
-                    
                     if (currentUser && currentUser.name === name) {
                         currentUser.rankDaily = data;
                         currentUser.rankRemain = newRemain;
                     }
-                    
                     setRankDailyCache(name, data);
-                    
                     return { success: true, remain: newRemain, used: used };
                 }
-                
                 return { success: false, remain: 0, message: '扣减失败' };
             } catch (e) {
                 console.error('使用排位赛次数失败:', e);
@@ -811,18 +793,16 @@
             }
         }
 
-        function applyRankDataToUser(user) {
-            if (!user || !user.name) return;
+        // 强制重置排位赛缓存为今日
+        function resetRankDailyToToday(name) {
             var today = DateUtils.getTodayUTC();
-            
-            // 优先从缓存获取，如果缓存不存在或日期不是今天，则重置
-            var data = getRankDailyCache(user.name);
-            if (!data || data.date !== today) {
-                data = { date: today, used: 0 };
-                setRankDailyCache(user.name, data);
+            var data = { date: today, used: 0 };
+            setRankDailyCache(name, data);
+            if (currentUser && currentUser.name === name) {
+                currentUser.rankDaily = data;
+                currentUser.rankRemain = 3;
             }
-            user.rankDaily = data;
-            user.rankRemain = Math.max(0, 3 - (parseInt(data.used) || 0));
+            return data;
         }
 
         // ============================================================
@@ -1136,14 +1116,16 @@
         }
 
         // ============================================================
-        //  主界面更新（只显示今日数据）
+        //  主界面更新（强制跨天重置）
         // ============================================================
-        function updateMainUI() {
+        async function updateMainUI() {
             if (!currentUser) return;
 
-            // 防御性检查：若日期变更则重置今日数据
             var today = DateUtils.getTodayUTC();
+
+            // 检查是否跨天
             if (currentUser.dailyScoreDate !== today) {
+                // 重置今日积分
                 currentUser.todayWarmup = 0;
                 currentUser.todayRank = 0;
                 currentUser.todayChallenge = 0;
@@ -1151,11 +1133,38 @@
                 currentUser.dailyScoreDate = today;
                 currentUser.challengeUsed = 0;
                 currentUser.challengeDate = today;
-                // 排位赛次数由 applyRankDataToUser 处理
-                applyRankDataToUser(currentUser);
+                // 重置排位赛次数（强制从服务器同步）
+                try {
+                    await syncRankDailyFromCloud(currentUser.name);
+                } catch(e) {
+                    // 如果同步失败，强制重置缓存
+                    resetRankDailyToToday(currentUser.name);
+                }
+                // 更新存储
                 setStorage('currentUser', currentUser);
+            } else {
+                // 日期相同，仍确保排位赛缓存正确（可能因其他操作导致不一致）
+                var rankData = getRankDailyCache(currentUser.name);
+                if (!rankData || rankData.date !== today) {
+                    // 如果缓存无效，尝试同步
+                    try {
+                        await syncRankDailyFromCloud(currentUser.name);
+                    } catch(e) {
+                        resetRankDailyToToday(currentUser.name);
+                    }
+                } else {
+                    // 缓存有效，应用
+                    if (currentUser.rankDaily && currentUser.rankDaily.date === today) {
+                        var used = parseInt(currentUser.rankDaily.used) || 0;
+                        currentUser.rankRemain = Math.max(0, 3 - used);
+                    } else {
+                        currentUser.rankDaily = rankData;
+                        currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
+                    }
+                }
             }
 
+            // 更新界面元素
             document.getElementById('mainUserName').textContent = currentUser.name;
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = currentUser.totalScore || 0;
@@ -2208,6 +2217,7 @@
                 try {
                     currentUser = normalizeUser(savedUser);
                     var today = DateUtils.getTodayUTC();
+
                     // 如果 dailyScoreDate 为空或者不等于今天，则重置今日数据
                     if (!currentUser.dailyScoreDate || currentUser.dailyScoreDate !== today) {
                         currentUser.todayWarmup = 0;
@@ -2217,14 +2227,35 @@
                         currentUser.dailyScoreDate = today;
                         currentUser.challengeUsed = 0;
                         currentUser.challengeDate = today;
-                        // 排位赛次数从服务器同步
-                        await syncRankDailyFromCloud(currentUser.name);
+                        // 强制重置排位赛缓存
+                        try {
+                            await syncRankDailyFromCloud(currentUser.name);
+                        } catch(e) {
+                            resetRankDailyToToday(currentUser.name);
+                        }
                     } else {
-                        // 即使日期相同，也重新应用排位赛数据（确保缓存一致）
-                        applyRankDataToUser(currentUser);
+                        // 日期相同，但确保排位赛缓存有效
+                        var rankData = getRankDailyCache(currentUser.name);
+                        if (!rankData || rankData.date !== today) {
+                            try {
+                                await syncRankDailyFromCloud(currentUser.name);
+                            } catch(e) {
+                                resetRankDailyToToday(currentUser.name);
+                            }
+                        } else {
+                            // 应用缓存
+                            if (currentUser.rankDaily && currentUser.rankDaily.date === today) {
+                                var used = parseInt(currentUser.rankDaily.used) || 0;
+                                currentUser.rankRemain = Math.max(0, 3 - used);
+                            } else {
+                                currentUser.rankDaily = rankData;
+                                currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
+                            }
+                        }
                     }
+
                     showPage('mainPage');
-                    updateMainUI();
+                    await updateMainUI();
                     setStorage('currentUser', currentUser);
                 } catch (e) {
                     console.error('恢复用户失败:', e);
