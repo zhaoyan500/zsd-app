@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>张思德传人知识答题闯关</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
     <script>
         tailwind.config = {
@@ -24,7 +25,6 @@
         }
     </script>
     <style>
-        /* ===== 样式 ===== */
         .page { display: none !important; min-height: 100vh; padding-top: 100px; padding-bottom: 60px; }
         .page.active { display: block !important; }
         .page.quiz-mode { padding-top: 60px; padding-bottom: 50px; }
@@ -239,8 +239,8 @@
                         </div>
                         <span class="text-sm text-gray-400">10题 · 100分</span>
                     </div>
-                    <p class="text-xs text-gray-500 mt-1">不限次数 · 累计积分 · 每日更新题库</p>
-                    <div class="mt-2 text-xs text-gray-400" id="warmupStatus">今日累计: --</div>
+                    <p class="text-xs text-gray-500 mt-1">不限次数 · 每日取最高分 · 每日更新题库</p>
+                    <div class="mt-2 text-xs text-gray-400" id="warmupStatus">今日最高: --</div>
                 </div>
 
                 <div class="mode-card" onclick="enterMode('ranked')">
@@ -252,8 +252,8 @@
                         </div>
                         <span class="text-sm text-gray-400">15题 · 150分</span>
                     </div>
-                    <p class="text-xs text-gray-500 mt-1">每日3次 · 连击加分 · 20秒限时</p>
-                    <div class="mt-2 text-xs text-gray-400" id="rankedStatus">今日剩余: 3次 | 累计: --</div>
+                    <p class="text-xs text-gray-500 mt-1">每日3次 · 每日取最高分 · 20秒限时</p>
+                    <div class="mt-2 text-xs text-gray-400" id="rankedStatus">今日剩余: 3次 | 最高: --</div>
                 </div>
 
                 <div class="mode-card" onclick="enterMode('challenge')">
@@ -265,8 +265,8 @@
                         </div>
                         <span class="text-sm text-gray-400">20题 · 200分</span>
                     </div>
-                    <p class="text-xs text-gray-500 mt-1">每日1次 · 答错即止 · 连击倍率 · 15秒限时</p>
-                    <div class="mt-2 text-xs text-gray-400" id="challengeStatus">今日已用: 0/1 | 累计: --</div>
+                    <p class="text-xs text-gray-500 mt-1">每日1次 · 每日取最高分 · 15秒限时</p>
+                    <div class="mt-2 text-xs text-gray-400" id="challengeStatus">今日已用: 0/1 | 最高: --</div>
                 </div>
             </div>
 
@@ -580,11 +580,10 @@
         }
 
         // ============================================================
-        //  数据适配器（包含今日得分字段）
+        //  数据适配器
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
-            // 若用户对象已有规范化字段则直接使用
             if (user.warmupScore !== undefined && user.rankScore !== undefined) {
                 return user;
             }
@@ -636,7 +635,7 @@
         }
 
         // ============================================================
-        //  排位赛数据管理
+        //  排位赛数据管理 - 云端优先
         // ============================================================
         async function syncRankDailyFromCloud(name) {
             if (!name) return null;
@@ -840,7 +839,8 @@
                     var bufferSize = audioCtx.sampleRate * 0.15;
                     var buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
                     var data = buffer.getChannelData(0);
-                    for (var i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.03));
+                    for (var i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate *
+                        0.03));
                     var source = audioCtx.createBufferSource();
                     source.buffer = buffer;
                     var gain2 = audioCtx.createGain();
@@ -927,7 +927,6 @@
 
         function updateDailyScore(user) {
             var today = DateUtils.getTodayUTC();
-            // 若日期不是今天，重置今日累计得分
             if (user.dailyScoreDate !== today) {
                 user.dailyScoreDate = today;
                 user.dailyScore = 0;
@@ -935,13 +934,11 @@
                 user.todayRankScore = 0;
                 user.todayChallengeScore = 0;
             } else {
-                // 计算今日总积分（累计）
                 user.dailyScore = (user.todayWarmupScore || 0) + (user.todayRankScore || 0) + (user.todayChallengeScore || 0);
             }
         }
 
         function updateTotalScore(user) {
-            // 总积分 = 各模式累计总分之和
             user.totalScore = (user.warmupScore || 0) + (user.rankScore || 0) + (user.challengeScore || 0);
         }
 
@@ -952,7 +949,7 @@
         }
 
         // ============================================================
-        //  ✅ 注册 - 使用 UTC 日期
+        //  注册
         // ============================================================
         async function userRegister() {
             var unit = document.getElementById('unitSelect').value;
@@ -980,7 +977,6 @@
                 currentUser.rankDaily = initData;
                 currentUser.rankRemain = 3;
 
-                // 初始化今日得分
                 currentUser.todayWarmupScore = 0;
                 currentUser.todayRankScore = 0;
                 currentUser.todayChallengeScore = 0;
@@ -1001,7 +997,7 @@
         }
 
         // ============================================================
-        //  ✅ 登录
+        //  登录
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
@@ -1031,7 +1027,6 @@
                     currentUser.rankRemain = 3;
                 }
 
-                // 确保今日得分重置
                 updateDailyScore(currentUser);
                 updateTotalScore(currentUser);
 
@@ -1046,7 +1041,7 @@
         }
 
         // ============================================================
-        //  保存用户数据到云端（传递累计积分）
+        //  保存用户数据到云端
         // ============================================================
         async function saveUserToCloud(user) {
             try {
@@ -1054,18 +1049,17 @@
                     id: user.id,
                     name: user.name,
                     unit: user.unit,
-                    warmupScore: user.warmupScore || 0,          // 累计
+                    warmupScore: user.warmupScore || 0,
                     warmupDate: user.warmupDate || '',
-                    rankScore: user.rankScore || 0,              // 累计
+                    rankScore: user.rankScore || 0,
                     rankDaily: user.rankDaily || { date: DateUtils.getTodayUTC(), used: 0 },
                     rankHistory: user.rankHistory || [],
-                    challengeScore: user.challengeScore || 0,    // 累计
+                    challengeScore: user.challengeScore || 0,
                     challengeDate: user.challengeDate || '',
                     challengeUsed: user.challengeUsed || 0,
                     challengeHistory: user.challengeHistory || [],
                     totalScore: user.totalScore || 0,
                     version: user.version || 1,
-                    // 今日累计得分
                     todayWarmupScore: user.todayWarmupScore || 0,
                     todayRankScore: user.todayRankScore || 0,
                     todayChallengeScore: user.todayChallengeScore || 0,
@@ -1129,7 +1123,7 @@
         }
 
         // ============================================================
-        //  ✅ 主界面更新
+        //  主界面更新
         // ============================================================
         function updateMainUI() {
             if (!currentUser) return;
@@ -1151,7 +1145,7 @@
             
             var statusEl = document.getElementById('rankedStatus');
             if (statusEl) {
-                statusEl.textContent = '今日剩余: ' + rankRemain + '次 | 累计: ' + (currentUser.rankScore || 0);
+                statusEl.textContent = '今日剩余: ' + rankRemain + '次 | 已用: ' + rankUsed + '/3 | 最高: ' + (currentUser.rankScore || 0);
             }
             
             var badge = document.getElementById('rankBadge');
@@ -1168,10 +1162,10 @@
                 }
             }
 
-            var wStatus = currentUser.todayWarmupScore ? '今日累计: ' + currentUser.todayWarmupScore : '今日未玩';
+            var wStatus = currentUser.todayWarmupScore ? '今日最高: ' + currentUser.todayWarmupScore : '今日未玩';
             document.getElementById('warmupStatus').textContent = wStatus;
             document.getElementById('challengeStatus').textContent =
-                '今日已用: ' + (currentUser.challengeUsed || 0) + '/1 | 累计: ' + (currentUser.challengeScore || 0);
+                '今日已用: ' + (currentUser.challengeUsed || 0) + '/1 | 最高: ' + (currentUser.challengeScore || 0);
 
             var cfg = getAdminConfig();
             var cards = document.querySelectorAll('.mode-card');
@@ -1191,7 +1185,7 @@
         }
 
         // ============================================================
-        //  ✅ 进入赛制
+        //  进入赛制
         // ============================================================
         async function enterMode(mode) {
             if (!currentUser) {
@@ -1242,7 +1236,8 @@
             userScore = 0;
             comboCount = 0;
             isAnswering = false;
-            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (timerInterval) { clearInterval(timerInterval);
+                timerInterval = null; }
             document.getElementById('nowScore').textContent = '0';
             document.getElementById('comboDisplay').classList.add('hidden');
             document.getElementById('comboDisplay').textContent = '🔥 连击 x0';
@@ -1311,7 +1306,8 @@
             } else {
                 document.getElementById('timerRing').textContent = '--';
                 document.getElementById('timerRing').className = 'timer-ring';
-                if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+                if (timerInterval) { clearInterval(timerInterval);
+                    timerInterval = null; }
             }
         }
 
@@ -1351,7 +1347,8 @@
         function selectAnswer(selKey, dom) {
             if (isAnswering) return;
             isAnswering = true;
-            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (timerInterval) { clearInterval(timerInterval);
+                timerInterval = null; }
 
             var item = quizQuestions[quizIndex];
             var isRight = selKey === item.a;
@@ -1426,7 +1423,8 @@
         }
 
         function nextQuestion() {
-            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (timerInterval) { clearInterval(timerInterval);
+                timerInterval = null; }
             quizIndex++;
             if (quizIndex >= quizQuestions.length) {
                 endQuiz('完成');
@@ -1436,21 +1434,25 @@
         }
 
         // ============================================================
-        //  ✅ 答题结束 - 累加积分
+        //  答题结束 - 每日取最高分（不累加）
         // ============================================================
         async function endQuiz(reason) {
-            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (timerInterval) { clearInterval(timerInterval);
+                timerInterval = null; }
             if (!currentUser) return;
 
             var today = DateUtils.getTodayUTC();
             var mode = currentMode;
+            var oldTodayScore = 0;
 
             if (mode === 'warmup') {
-                // 累加热身赛得分
-                currentUser.warmupScore = (currentUser.warmupScore || 0) + userScore;
-                currentUser.warmupDate = today;
-                // 今日热身累计得分
-                currentUser.todayWarmupScore = (currentUser.todayWarmupScore || 0) + userScore;
+                oldTodayScore = currentUser.todayWarmupScore || 0;
+                // 如果本次得分更高，则增加历史总分的差值
+                if (userScore > oldTodayScore) {
+                    currentUser.warmupScore = (currentUser.warmupScore || 0) + (userScore - oldTodayScore);
+                    currentUser.todayWarmupScore = userScore;
+                    currentUser.warmupDate = today;
+                }
 
             } else if (mode === 'ranked') {
                 var result = await useRankDaily(currentUser.name);
@@ -1463,24 +1465,25 @@
                 currentUser.rankDaily = { date: today, used: result.used };
                 currentUser.rankRemain = result.remain;
 
-                // 累加排位赛得分
-                currentUser.rankScore = (currentUser.rankScore || 0) + userScore;
+                oldTodayScore = currentUser.todayRankScore || 0;
+                if (userScore > oldTodayScore) {
+                    currentUser.rankScore = (currentUser.rankScore || 0) + (userScore - oldTodayScore);
+                    currentUser.todayRankScore = userScore;
+                }
                 if (!currentUser.rankHistory) currentUser.rankHistory = [];
                 currentUser.rankHistory.push({ date: today, score: userScore });
-                // 今日排位累计得分
-                currentUser.todayRankScore = (currentUser.todayRankScore || 0) + userScore;
-
-                console.log('✅ 排位赛已保存: 今日已用 ' + result.used + ' 次，剩余 ' + result.remain + ' 次');
 
             } else if (mode === 'challenge') {
                 currentUser.challengeDate = today;
                 currentUser.challengeUsed = (currentUser.challengeUsed || 0) + 1;
-                // 累加挑战赛得分
-                currentUser.challengeScore = (currentUser.challengeScore || 0) + userScore;
+
+                oldTodayScore = currentUser.todayChallengeScore || 0;
+                if (userScore > oldTodayScore) {
+                    currentUser.challengeScore = (currentUser.challengeScore || 0) + (userScore - oldTodayScore);
+                    currentUser.todayChallengeScore = userScore;
+                }
                 if (!currentUser.challengeHistory) currentUser.challengeHistory = [];
                 currentUser.challengeHistory.push({ date: today, score: userScore });
-                // 今日挑战累计得分
-                currentUser.todayChallengeScore = (currentUser.todayChallengeScore || 0) + userScore;
             }
 
             // 更新每日总积分
@@ -1495,7 +1498,6 @@
                 alert('数据保存失败，请检查网络后重试');
             }
 
-            // 显示结果
             document.getElementById('resName').textContent = currentUser.name;
             document.getElementById('resUnit').textContent = currentUser.unit;
             document.getElementById('resMode').textContent = getModeIcon(mode) + ' ' + getModeLabel(mode);
@@ -1519,7 +1521,8 @@
         }
 
         function quitQuiz() {
-            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (timerInterval) { clearInterval(timerInterval);
+                timerInterval = null; }
             if (confirm('确定退出当前答题吗？进度将不会保存。')) {
                 showPage('mainPage');
                 updateMainUI();
@@ -1547,7 +1550,7 @@
         }
 
         // ============================================================
-        //  ✅ 排行榜
+        //  排行榜
         // ============================================================
         var cachedUsers = [];
         var cachedTeamRanking = [];
@@ -1599,7 +1602,7 @@
                     } else {
                         u.rankRemain = Math.max(0, 3 - (u.rankDaily.used || 0));
                     }
-                    // 确保 totalScore 正确
+                    // 确保总积分正确
                     u.totalScore = (u.warmupScore || 0) + (u.rankScore || 0) + (u.challengeScore || 0);
                 }
 
@@ -1723,7 +1726,7 @@
         }
 
         // ============================================================
-        //  renderRank - 总榜、战队榜、周月榜
+        //  renderRank - 周榜/月榜显示前十名
         // ============================================================
         async function renderRank() {
             var rankBox = document.getElementById('rankList');
@@ -1750,7 +1753,7 @@
                             return (b.totalScore || 0) - (a.totalScore || 0);
                         });
 
-                        var html = '<div class="rank-section-title">🏆 个人总积分排行（累计）</div>';
+                        var html = '<div class="rank-section-title">🏆 个人总积分排行（历史每日最高分累计）</div>';
                         if (sorted.length === 0) {
                             html += '<p class="text-center text-gray-400 py-4">暂无用户数据，快去注册答题吧！</p>';
                         } else {
@@ -1850,7 +1853,7 @@
                     }
 
                 } else {
-                    // 月榜/周榜：调用后端聚合接口
+                    // 月榜/周榜：调用后端接口，只显示前10名
                     teamTotalRank.classList.add('hidden');
                     const period = rankFilter === 'week' ? 'week' : 'month';
                     try {
@@ -1861,13 +1864,16 @@
                         const ranking = data.ranking || [];
                         const startDate = data.startDate || '';
 
-                        let html = `<div class="rank-section-title">📅 ${period === 'week' ? '本周' : '本月'}每日积分累计排行</div>`;
+                        // 只取前10名
+                        const top10 = ranking.slice(0, 10);
+
+                        let html = `<div class="rank-section-title">📅 ${period === 'week' ? '本周' : '本月'}每日最高分累计 TOP10</div>`;
                         html += `<div class="text-xs text-gray-400 mb-2">统计起始：${startDate}</div>`;
-                        if (ranking.length === 0) {
+                        if (top10.length === 0) {
                             html += '<p class="text-center text-gray-400 py-4">暂无数据</p>';
                         } else {
-                            for (let i = 0; i < ranking.length && i < 50; i++) {
-                                const u = ranking[i];
+                            for (let i = 0; i < top10.length; i++) {
+                                const u = top10[i];
                                 const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
                                 const isCurrentUser = currentUser && u.name === currentUser.name;
                                 html += `<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg${isCurrentUser ? ' border-2 border-primary' : ''}">
@@ -1888,8 +1894,7 @@
                 hideLoading();
             } catch (error) {
                 console.error('加载排行榜失败:', error);
-                rankBox.innerHTML = '<p class="text-center text-red-500 py-4">❌ 加载失败，请刷新重试<br><span class="text-xs text-gray-400">' +
-                    (error.message || '未知错误') + '</span></p>';
+                rankBox.innerHTML = '<p class="text-center text-red-500 py-4">❌ 加载失败，请刷新重试</p>';
                 hideLoading();
             }
         }
