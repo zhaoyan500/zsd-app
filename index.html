@@ -583,7 +583,7 @@
         }
 
         // ============================================================
-        //  数据适配器（修正：当 dailyScoreDate 不存在时默认今天）
+        //  数据适配器（保留原始 dailyScoreDate，不自动补全）
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
@@ -597,11 +597,6 @@
             if (rankDaily && typeof rankDaily === 'object' && rankDaily.date && rankDaily.used !== undefined) {
                 validRankDaily = rankDaily;
             }
-            // 关键修复：如果 dailyScoreDate 不存在，默认设为今天，避免刷新时被重置
-            var dailyScoreDate = user.daily_score_date || user.dailyScoreDate || '';
-            if (!dailyScoreDate) {
-                dailyScoreDate = DateUtils.getTodayUTC();
-            }
             return {
                 id: user.id,
                 name: user.name,
@@ -614,7 +609,7 @@
                 todayRank: user.today_rank_score || user.todayRankScore || 0,
                 todayChallenge: user.today_challenge_score || user.todayChallengeScore || 0,
                 todayTotal: user.daily_score || user.dailyScore || 0,
-                dailyScoreDate: dailyScoreDate,
+                dailyScoreDate: user.daily_score_date || user.dailyScoreDate || '', // 保留原始值，可能为空
                 totalScore: user.total_score || user.totalScore || 0,
                 rankRemain: user.rank_remain || user.rankRemain || 3,
                 rankDaily: validRankDaily,
@@ -1938,8 +1933,9 @@
                 try {
                     currentUser = normalizeUser(savedUser);
                     var today = DateUtils.getTodayUTC();
-                    // 如果保存的日期不是今天，重置今日数据（但保留总积分和历史最高）
-                    if (currentUser.dailyScoreDate !== today) {
+                    // 只有当 dailyScoreDate 存在且不等于今天时，才重置今日数据
+                    // 如果 dailyScoreDate 为空，视为今天，不重置
+                    if (currentUser.dailyScoreDate && currentUser.dailyScoreDate !== today) {
                         currentUser.todayWarmup = 0;
                         currentUser.todayRank = 0;
                         currentUser.todayChallenge = 0;
