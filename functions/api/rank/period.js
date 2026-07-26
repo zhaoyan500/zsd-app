@@ -15,7 +15,6 @@ export async function onRequest(context) {
         const now = new Date();
         let startDate;
         if (period === 'week') {
-            // 本周一（UTC）
             const day = now.getUTCDay(); // 0=周日
             const diff = (day === 0 ? 7 : day) - 1; // 周一为0
             const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff));
@@ -24,22 +23,35 @@ export async function onRequest(context) {
             startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().split('T')[0];
         }
 
-        // 查询每个用户在周期内的每日积分总和
+        // 方案：优先从 daily_score_history 汇总（包含所有模式，且数据最准确），
+        // 若某用户在该表无记录，则从 quiz_history 汇总排位+挑战赛作为补充。
+        // 使用 COALESCE 确保每个用户都出现。
         const rows = await db.prepare(`
             SELECT 
-                u.id, u.name, u.unit,
-                COALESCE(SUM(h.daily_score), 0) as period_score
+                u.id, 
+                u.name, 
+                u.unit,
+                COALESCE(
+                    (SELECT SUM(dh.daily_score) FROM daily_score_history dh WHERE dh.user_id = u.id AND dh.date >= ?),
+                    (SELECT SUM(qh.score) FROM quiz_history qh WHERE qh.user_id = u.id AND qh.date >= ? AND qh.mode IN ('ranked', 'challenge'))
+                ) AS period_score
             FROM users u
-            LEFT JOIN daily_score_history h ON u.id = h.user_id AND h.date >= ?
-            GROUP BY u.id
+            WHERE u.id IN (
+                SELECT DISTINCT user_id FROM daily_score_history WHERE date >= ?
+                UNION
+                SELECT DISTINCT user_id FROM quiz_history WHERE date >= ? AND mode IN ('ranked', 'challenge')
+            )
             ORDER BY period_score DESC
-        `).bind(startDate).all();
+        `).bind(startDate, startDate, startDate, startDate).all();
 
         const results = rows.results || [];
+        // 过滤掉 period_score 为 null 或 0 的用户（无任何记录）
+        const filtered = results.filter(r => r.period_score !== null && r.period_score > 0);
+
         return new Response(JSON.stringify({
             period: period,
             startDate: startDate,
-            ranking: results
+            ranking: filtered
         }), { headers });
 
     } catch (err) {
