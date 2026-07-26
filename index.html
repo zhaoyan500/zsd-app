@@ -24,7 +24,6 @@
         }
     </script>
     <style>
-        /* 样式与之前完全相同，省略以节省篇幅，实际部署时请保留原样式 */
         .page { display: none !important; min-height: 100vh; padding-top: 100px; padding-bottom: 60px; }
         .page.active { display: block !important; }
         .page.quiz-mode { padding-top: 60px; padding-bottom: 50px; }
@@ -437,7 +436,74 @@
                 <button onclick="clearAllUser()" class="w-full bg-danger text-white py-2 rounded">清空所有用户数据</button>
             </div>
 
+            <!-- 题库管理 -->
+            <div class="bg-white rounded-xl shadow p-5">
+                <h3 class="font-bold text-lg mb-3">📚 题库管理</h3>
+                <div class="flex flex-wrap gap-2 mb-3">
+                    <button onclick="loadQuestions('warmup')" class="px-3 py-1 bg-primary text-white rounded text-sm">热身赛</button>
+                    <button onclick="loadQuestions('ranked')" class="px-3 py-1 bg-primary text-white rounded text-sm">排位赛</button>
+                    <button onclick="loadQuestions('challenge')" class="px-3 py-1 bg-primary text-white rounded text-sm">挑战赛</button>
+                    <button onclick="showAddQuestion()" class="px-3 py-1 bg-success text-white rounded text-sm">➕ 添加题目</button>
+                    <button onclick="syncDefaultQuiz()" class="px-3 py-1 bg-warning text-white rounded text-sm">🔄 同步默认题库</button>
+                </div>
+                <div id="questionList" class="max-h-[40vh] overflow-y-auto space-y-2 text-sm">
+                    <p class="text-gray-400 text-center py-4">请选择模式加载题库</p>
+                </div>
+            </div>
+
             <button onclick="logoutAdmin()" class="w-full border py-3 rounded-lg">退出后台</button>
+        </div>
+    </div>
+
+    <!-- 添加/编辑题目的模态框 -->
+    <div id="questionModal" class="modal-box hidden">
+        <div class="modal-inner max-w-lg">
+            <h3 id="questionModalTitle" class="text-lg font-bold text-primary mb-3">添加题目</h3>
+            <input type="hidden" id="editQuestionId">
+            <div class="text-left space-y-3">
+                <div>
+                    <label class="block text-sm font-medium">所属模式</label>
+                    <select id="qMode" class="w-full border rounded px-3 py-2">
+                        <option value="warmup">热身赛</option>
+                        <option value="ranked">排位赛</option>
+                        <option value="challenge">挑战赛</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium">题目内容</label>
+                    <input type="text" id="qQuestion" class="w-full border rounded px-3 py-2" placeholder="请输入题目">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-sm font-medium">A选项</label>
+                        <input type="text" id="qOptA" class="w-full border rounded px-3 py-2" placeholder="选项A">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">B选项</label>
+                        <input type="text" id="qOptB" class="w-full border rounded px-3 py-2" placeholder="选项B">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">C选项</label>
+                        <input type="text" id="qOptC" class="w-full border rounded px-3 py-2" placeholder="选项C">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">D选项</label>
+                        <input type="text" id="qOptD" class="w-full border rounded px-3 py-2" placeholder="选项D">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium">正确答案 (A/B/C/D)</label>
+                    <input type="text" id="qCorrect" class="w-full border rounded px-3 py-2" maxlength="1" placeholder="例如 A">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium">排序序号 (数字越小越靠前)</label>
+                    <input type="number" id="qSort" class="w-full border rounded px-3 py-2" placeholder="0" value="0">
+                </div>
+            </div>
+            <div class="flex gap-3 mt-4 justify-end">
+                <button onclick="closeQuestionModal()" class="px-4 py-2 border rounded">取消</button>
+                <button onclick="saveQuestion()" class="px-4 py-2 bg-primary text-white rounded">保存</button>
+            </div>
         </div>
     </div>
 
@@ -1141,7 +1207,7 @@
         }
 
         // ============================================================
-        //  进入赛制
+        //  进入赛制（异步获取题库）
         // ============================================================
         async function enterMode(mode) {
             if (!currentUser) {
@@ -1186,10 +1252,40 @@
                 }
             }
 
+            // 获取题库
+            let questions = null;
+            try {
+                const resp = await fetch(API_BASE + '/questions?mode=' + mode);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        // 将数据库返回的格式转换为前端使用的格式
+                        questions = data.map(q => ({
+                            q: q.question,
+                            a: q.correct,
+                            opt: {
+                                A: q.option_a,
+                                B: q.option_b,
+                                C: q.option_c,
+                                D: q.option_d
+                            }
+                        }));
+                    }
+                }
+            } catch (e) {
+                console.warn('从服务器获取题库失败，使用默认题库', e);
+            }
+            if (!questions || questions.length === 0) {
+                // 使用默认题库
+                questions = getDefaultQuiz(mode);
+                // 如有必要可将默认题库同步到数据库，但由管理员手动触发
+            }
+            quizQuestions = questions;
+
             currentMode = mode;
-            quizQuestions = getDefaultQuiz(mode);
             var expected = { warmup: 10, ranked: 15, challenge: 20 };
             if (!quizQuestions || quizQuestions.length !== expected[mode]) {
+                // 如果数量不符，回退到硬编码
                 quizQuestions = getDefaultQuiz(mode);
             }
             quizIndex = 0;
@@ -1807,6 +1903,192 @@
         }
 
         // ============================================================
+        //  题库管理 (管理员)
+        // ============================================================
+        let currentQuestionMode = 'warmup';
+        let questionListData = [];
+
+        async function loadQuestions(mode) {
+            currentQuestionMode = mode;
+            document.getElementById('questionList').innerHTML = '<p class="text-center text-gray-400 py-2">加载中...</p>';
+            try {
+                const resp = await fetch(API_BASE + '/questions?mode=' + mode + '&adminKey=' + ADMIN_PWD);
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+                questionListData = data;
+                renderQuestionList(data);
+            } catch (e) {
+                document.getElementById('questionList').innerHTML = '<p class="text-center text-red-500 py-2">加载失败：' + e.message + '</p>';
+            }
+        }
+
+        function renderQuestionList(questions) {
+            const container = document.getElementById('questionList');
+            if (!questions || questions.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-400 py-4">该模式暂无题目，点击“添加题目”创建</p>';
+                return;
+            }
+            let html = '';
+            questions.forEach((q, idx) => {
+                html += `
+                    <div class="flex justify-between items-start p-3 bg-grayLight rounded-lg border">
+                        <div class="flex-1">
+                            <div class="font-medium">${idx+1}. ${q.question}</div>
+                            <div class="text-xs text-gray-600 grid grid-cols-2 gap-x-2 mt-1">
+                                <span>A. ${q.option_a}</span>
+                                <span>B. ${q.option_b}</span>
+                                <span>C. ${q.option_c}</span>
+                                <span>D. ${q.option_d}</span>
+                            </div>
+                            <div class="text-xs text-primary mt-1">正确答案：${q.correct}</div>
+                        </div>
+                        <div class="flex gap-1 ml-2">
+                            <button onclick="editQuestion(${q.id})" class="text-blue-500 text-xs hover:underline">编辑</button>
+                            <button onclick="deleteQuestion(${q.id})" class="text-red-500 text-xs hover:underline">删除</button>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        function showAddQuestion() {
+            document.getElementById('editQuestionId').value = '';
+            document.getElementById('questionModalTitle').textContent = '添加题目';
+            document.getElementById('qMode').value = currentQuestionMode;
+            document.getElementById('qQuestion').value = '';
+            document.getElementById('qOptA').value = '';
+            document.getElementById('qOptB').value = '';
+            document.getElementById('qOptC').value = '';
+            document.getElementById('qOptD').value = '';
+            document.getElementById('qCorrect').value = '';
+            document.getElementById('qSort').value = '0';
+            document.getElementById('questionModal').classList.remove('hidden');
+        }
+
+        function closeQuestionModal() {
+            document.getElementById('questionModal').classList.add('hidden');
+        }
+
+        function editQuestion(id) {
+            const q = questionListData.find(item => item.id === id);
+            if (!q) return;
+            document.getElementById('editQuestionId').value = q.id;
+            document.getElementById('questionModalTitle').textContent = '编辑题目';
+            document.getElementById('qMode').value = q.mode;
+            document.getElementById('qQuestion').value = q.question;
+            document.getElementById('qOptA').value = q.option_a;
+            document.getElementById('qOptB').value = q.option_b;
+            document.getElementById('qOptC').value = q.option_c;
+            document.getElementById('qOptD').value = q.option_d;
+            document.getElementById('qCorrect').value = q.correct;
+            document.getElementById('qSort').value = q.sort_order || 0;
+            document.getElementById('questionModal').classList.remove('hidden');
+        }
+
+        async function saveQuestion() {
+            const id = document.getElementById('editQuestionId').value;
+            const mode = document.getElementById('qMode').value;
+            const question = document.getElementById('qQuestion').value.trim();
+            const option_a = document.getElementById('qOptA').value.trim();
+            const option_b = document.getElementById('qOptB').value.trim();
+            const option_c = document.getElementById('qOptC').value.trim();
+            const option_d = document.getElementById('qOptD').value.trim();
+            const correct = document.getElementById('qCorrect').value.trim().toUpperCase();
+            const sort_order = parseInt(document.getElementById('qSort').value) || 0;
+
+            if (!question || !option_a || !option_b || !option_c || !option_d || !correct) {
+                alert('请填写完整信息');
+                return;
+            }
+            if (!['A','B','C','D'].includes(correct)) {
+                alert('正确答案必须是 A、B、C、D 中的一个');
+                return;
+            }
+
+            const payload = {
+                mode, question, correct, option_a, option_b, option_c, option_d, sort_order, adminKey: ADMIN_PWD
+            };
+            let url = API_BASE + '/questions';
+            let method = 'POST';
+            if (id) {
+                method = 'PUT';
+                payload.id = parseInt(id);
+            }
+
+            try {
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+                alert(id ? '题目已更新' : '题目已添加');
+                closeQuestionModal();
+                loadQuestions(currentQuestionMode);
+            } catch (e) {
+                alert('操作失败：' + e.message);
+            }
+        }
+
+        async function deleteQuestion(id) {
+            if (!confirm('确定删除该题目吗？')) return;
+            try {
+                const resp = await fetch(API_BASE + '/questions?id=' + id + '&adminKey=' + ADMIN_PWD, {
+                    method: 'DELETE'
+                });
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+                alert('已删除');
+                loadQuestions(currentQuestionMode);
+            } catch (e) {
+                alert('删除失败：' + e.message);
+            }
+        }
+
+        // 同步默认题库到数据库（可选功能）
+        async function syncDefaultQuiz() {
+            if (!confirm('将硬编码的默认题库同步到数据库（会覆盖已有题目）？')) return;
+            const mode = currentQuestionMode;
+            const defaultQuestions = getDefaultQuiz(mode);
+            // 先清空该模式所有题目
+            try {
+                // 获取现有题目ID列表
+                const respList = await fetch(API_BASE + '/questions?mode=' + mode + '&adminKey=' + ADMIN_PWD);
+                const list = await respList.json();
+                if (Array.isArray(list)) {
+                    for (const q of list) {
+                        await fetch(API_BASE + '/questions?id=' + q.id + '&adminKey=' + ADMIN_PWD, { method: 'DELETE' });
+                    }
+                }
+                // 逐个添加默认题目
+                for (const q of defaultQuestions) {
+                    const payload = {
+                        mode: mode,
+                        question: q.q,
+                        correct: q.a,
+                        option_a: q.opt.A,
+                        option_b: q.opt.B,
+                        option_c: q.opt.C,
+                        option_d: q.opt.D,
+                        sort_order: 0,
+                        adminKey: ADMIN_PWD
+                    };
+                    await fetch(API_BASE + '/questions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+                alert('同步成功！');
+                loadQuestions(mode);
+            } catch (e) {
+                alert('同步失败：' + e.message);
+            }
+        }
+
+        // ============================================================
         //  管理员功能
         // ============================================================
         function adminLoginCheck() {
@@ -1988,6 +2270,13 @@
         window.resetUserPassword = resetUserPassword;
         window.forgotPassword = forgotPassword;
         window.renderRank = renderRank;
+        window.loadQuestions = loadQuestions;
+        window.showAddQuestion = showAddQuestion;
+        window.closeQuestionModal = closeQuestionModal;
+        window.editQuestion = editQuestion;
+        window.saveQuestion = saveQuestion;
+        window.deleteQuestion = deleteQuestion;
+        window.syncDefaultQuiz = syncDefaultQuiz;
         window.API_BASE = API_BASE;
 
         document.addEventListener('DOMContentLoaded', init);
