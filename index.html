@@ -641,7 +641,7 @@
         }
 
         // ============================================================
-        // 数据适配器（保留原始 dailyScoreDate）
+        // 数据适配器
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
@@ -709,7 +709,6 @@
             setStorage(key, data);
         }
 
-        // 从服务器同步排位赛数据（获取当天已使用次数，不重置）
         async function syncRankDailyFromCloud(name) {
             if (!name) return null;
             try {
@@ -900,7 +899,6 @@
                 currentUser = normalizeUser(rawUser);
 
                 var today = DateUtils.getTodayUTC();
-                // 同步排位赛数据（获取当天已使用次数）
                 await syncRankDailyFromCloud(currentUser.name);
                 currentUser.dailyScoreDate = today;
                 currentUser.todayWarmup = 0;
@@ -922,7 +920,7 @@
         }
 
         // ============================================================
-        // 登录（不重置排位赛次数）
+        // 登录
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
@@ -942,7 +940,6 @@
                 currentUser = normalizeUser(rawUser);
 
                 var today = DateUtils.getTodayUTC();
-                // 确保今日数据存在
                 if (currentUser.dailyScoreDate !== today) {
                     currentUser.todayWarmup = 0;
                     currentUser.todayRank = 0;
@@ -952,7 +949,6 @@
                     currentUser.challengeUsed = 0;
                     currentUser.challengeDate = today;
                 }
-                // 从服务器同步排位赛数据（不重置，只获取当天已用次数）
                 await syncRankDailyFromCloud(currentUser.name);
 
                 showPage('mainPage');
@@ -1039,15 +1035,13 @@
         }
 
         // ============================================================
-        // 主界面更新（跨天重置今日积分和排位赛次数）
+        // 主界面更新
         // ============================================================
         async function updateMainUI() {
             if (!currentUser) return;
             var today = DateUtils.getTodayUTC();
 
-            // 检查是否跨天
             if (currentUser.dailyScoreDate !== today) {
-                // 重置今日积分
                 currentUser.todayWarmup = 0;
                 currentUser.todayRank = 0;
                 currentUser.todayChallenge = 0;
@@ -1055,11 +1049,9 @@
                 currentUser.dailyScoreDate = today;
                 currentUser.challengeUsed = 0;
                 currentUser.challengeDate = today;
-                // 从服务器同步排位赛数据（获取当天已用次数，若为0则剩余3次）
                 await syncRankDailyFromCloud(currentUser.name);
                 setStorage('currentUser', currentUser);
             } else {
-                // 日期相同，确保排位赛缓存有效
                 var rankData = getRankDailyCache(currentUser.name);
                 if (!rankData || rankData.date !== today) {
                     await syncRankDailyFromCloud(currentUser.name);
@@ -1069,7 +1061,6 @@
                 }
             }
 
-            // 更新界面元素
             document.getElementById('mainUserName').textContent = currentUser.name;
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = currentUser.totalScore || 0;
@@ -1141,7 +1132,6 @@
             if (mode === 'ranked') {
                 showLoading();
                 try {
-                    // 确保排位赛数据最新
                     var rankData = getRankDailyCache(currentUser.name);
                     if (!rankData || rankData.date !== DateUtils.getTodayUTC()) {
                         await syncRankDailyFromCloud(currentUser.name);
@@ -1429,7 +1419,6 @@
                 }
                 currentUser.warmupDate = today;
             } else if (mode === 'ranked') {
-                // 调用后端接口扣减次数
                 try {
                     var result = await apiCall('/use-rank', 'POST', { name: currentUser.name });
                     if (result && result.error) {
@@ -1661,9 +1650,6 @@
             return count;
         }
 
-        // ============================================================
-        // 核心修改：renderRank 中周/月榜 fetch 添加 cache: 'no-store'，并加强日志
-        // ============================================================
         async function renderRank() {
             var rankBox = document.getElementById('rankList');
             var teamTotalBox = document.getElementById('teamTotalList');
@@ -1777,7 +1763,7 @@
                     var period = rankFilter === 'week' ? 'week' : 'month';
                     try {
                         var resp = await fetch(API_BASE + '/rank/period?period=' + period, {
-                            cache: 'no-store'  // 强制获取最新数据
+                            cache: 'no-store'
                         });
                         var data = await resp.json();
                         console.log('📊 周/月榜原始数据:', JSON.stringify(data, null, 2));
@@ -2125,7 +2111,7 @@
         }
 
         // ============================================================
-        // 初始化（修复跨天重置问题）
+        // 初始化
         // ============================================================
         async function init() {
             if (!getStorage('adminConfig', null)) {
@@ -2149,7 +2135,6 @@
                     currentUser = normalizeUser(savedUser);
                     var today = DateUtils.getTodayUTC();
 
-                    // 如果 dailyScoreDate 为空或者不等于今天，则重置今日数据
                     if (!currentUser.dailyScoreDate || currentUser.dailyScoreDate !== today) {
                         currentUser.todayWarmup = 0;
                         currentUser.todayRank = 0;
@@ -2158,10 +2143,8 @@
                         currentUser.dailyScoreDate = today;
                         currentUser.challengeUsed = 0;
                         currentUser.challengeDate = today;
-                        // 从服务器同步排位赛数据（获取当天已用次数）
                         await syncRankDailyFromCloud(currentUser.name);
                     } else {
-                        // 日期相同，确保排位赛缓存有效
                         var rankData = getRankDailyCache(currentUser.name);
                         if (!rankData || rankData.date !== today) {
                             await syncRankDailyFromCloud(currentUser.name);
