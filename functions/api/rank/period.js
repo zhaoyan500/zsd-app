@@ -8,26 +8,34 @@ export async function onRequest(context) {
 
     try {
         const url = new URL(request.url);
-        const period = url.searchParams.get('period') || 'week';
+        const period = url.searchParams.get('period') || 'week'; // 'week' or 'month'
         const db = env.D1_DB;
 
+        // 使用中国时区 (UTC+8) 计算本周/本月起始日期
         const now = new Date();
+        // 转为北京时间 (UTC+8)
+        const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+        const year = beijingTime.getUTCFullYear();
+        const month = beijingTime.getUTCMonth();
+        const date = beijingTime.getUTCDate();
+        const day = beijingTime.getUTCDay(); // 0=周日
+
         let startDate;
         if (period === 'week') {
-            const day = now.getUTCDay();
-            const diff = (day === 0 ? 7 : day) - 1;
-            const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff));
+            // 周一为一周的开始 (周一=1, 周日=0 => 周日视为7)
+            const diff = (day === 0 ? 7 : day) - 1; // 距离周一的天数
+            const monday = new Date(Date.UTC(year, month, date - diff));
             startDate = monday.toISOString().split('T')[0];
-        } else {
-            startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().split('T')[0];
+        } else { // month
+            const firstDay = new Date(Date.UTC(year, month, 1));
+            startDate = firstDay.toISOString().split('T')[0];
         }
 
-        // 先检查 daily_score_history 表是否存在
+        // 检查表是否存在
         const tableCheck = await db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='daily_score_history'`).first();
         if (!tableCheck) {
-            console.error('❌ daily_score_history 表不存在！请执行迁移SQL。');
             return new Response(JSON.stringify({
-                error: '数据库表缺失，请联系管理员',
+                error: '数据库表缺失',
                 period: period,
                 startDate: startDate,
                 ranking: []
@@ -48,7 +56,6 @@ export async function onRequest(context) {
         `).bind(startDate).all();
 
         const results = rows.results || [];
-        console.log(`✅ 周/月榜查询成功，周期起始 ${startDate}，共 ${results.length} 条记录`);
 
         return new Response(JSON.stringify({
             period: period,
@@ -57,7 +64,7 @@ export async function onRequest(context) {
         }), { headers });
 
     } catch (err) {
-        console.error('❌ period.js 错误:', err);
+        console.error('period.js error:', err);
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
     }
 }
