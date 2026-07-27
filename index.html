@@ -1662,7 +1662,7 @@
         }
 
         // ============================================================
-        // 核心修改：renderRank 中周/月榜 fetch 添加 cache: 'no-store'
+        // 核心修改：renderRank 中周/月榜 fetch 添加 cache: 'no-store'，并加强日志
         // ============================================================
         async function renderRank() {
             var rankBox = document.getElementById('rankList');
@@ -1780,6 +1780,7 @@
                             cache: 'no-store'  // 强制获取最新数据
                         });
                         var data = await resp.json();
+                        console.log('📊 周/月榜原始数据:', JSON.stringify(data, null, 2));
                         if (data.error) throw new Error(data.error);
 
                         var ranking = data.ranking || [];
@@ -1787,13 +1788,14 @@
                         var top10 = ranking.slice(0, 10);
 
                         var html = '<div class="rank-section-title">📅 ' +
-                            (period === 'week' ? '本周' : '本月') + '每日积分累计 TOP10</div>';
+                            (period === 'week' ? '本周' : '本月') + '每日积分累计 TOP10（共' + ranking.length + '人参与）</div>';
                         html += '<div class="text-xs text-gray-400 mb-2">统计起始：' + startDate + '</div>';
                         if (top10.length === 0) {
-                            html += '<p class="text-center text-gray-400 py-4">暂无数据</p>';
+                            html += '<p class="text-center text-gray-400 py-4">该周期暂无活跃用户</p>';
                         } else {
                             for (var q = 0; q < top10.length; q++) {
                                 var u = top10[q];
+                                var score = Number(u.period_score) || 0;
                                 var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
                                 var isCurrent = currentUser && u.name === currentUser.name;
                                 html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
@@ -1803,12 +1805,13 @@
                                     '<span class="text-gray-400 text-xs ml-1">(' + (u.unit || '未分配') + ')</span>' +
                                     (isCurrent ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
                                     '</div>' +
-                                    '<span class="font-bold text-success">' + u.period_score + '分</span>' +
+                                    '<span class="font-bold text-success">' + score + '分</span>' +
                                     '</div>';
                             }
                         }
                         rankBox.innerHTML = html;
                     } catch (err) {
+                        console.error('❌ 周/月榜加载错误:', err);
                         rankBox.innerHTML = '<p class="text-center text-red-500 py-4">❌ 加载' +
                             (period === 'week' ? '周' : '月') + '榜失败：' + err.message + '</p>';
                     }
