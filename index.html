@@ -24,7 +24,6 @@
         }
     </script>
     <style>
-        /* 完整样式（与原始文件一致） */
         .page { display: none !important; min-height: 100vh; padding-top: 100px; padding-bottom: 60px; }
         .page.active { display: block !important; }
         .page.quiz-mode { padding-top: 60px; padding-bottom: 50px; }
@@ -1662,6 +1661,9 @@
             return count;
         }
 
+        // ============================================================
+        // 核心修改：renderRank 中周/月榜 fetch 添加 cache: 'no-store'
+        // ============================================================
         async function renderRank() {
             var rankBox = document.getElementById('rankList');
             var teamTotalBox = document.getElementById('teamTotalList');
@@ -1770,10 +1772,13 @@
                     rankBox.innerHTML = html2;
 
                 } else {
+                    // 周榜 / 月榜：调用 /api/rank/period，强制不缓存
                     teamTotalRank.classList.add('hidden');
                     var period = rankFilter === 'week' ? 'week' : 'month';
                     try {
-                        var resp = await fetch(API_BASE + '/rank/period?period=' + period);
+                        var resp = await fetch(API_BASE + '/rank/period?period=' + period, {
+                            cache: 'no-store'  // 强制获取最新数据
+                        });
                         var data = await resp.json();
                         if (data.error) throw new Error(data.error);
 
