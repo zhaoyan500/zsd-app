@@ -8,22 +8,32 @@ export async function onRequest(context) {
 
     try {
         const url = new URL(request.url);
-        const period = url.searchParams.get('period') || 'week'; // 'week' or 'month'
+        const period = url.searchParams.get('period') || 'week';
         const db = env.D1_DB;
 
-        // 计算周期起始日期（UTC）
         const now = new Date();
         let startDate;
         if (period === 'week') {
-            const day = now.getUTCDay(); // 0=周日
-            const diff = (day === 0 ? 7 : day) - 1; // 周一为0
+            const day = now.getUTCDay();
+            const diff = (day === 0 ? 7 : day) - 1;
             const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff));
             startDate = monday.toISOString().split('T')[0];
-        } else { // month
+        } else {
             startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().split('T')[0];
         }
 
-        // 仅从 daily_score_history 汇总，确保准确
+        // 先检查 daily_score_history 表是否存在
+        const tableCheck = await db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='daily_score_history'`).first();
+        if (!tableCheck) {
+            console.error('❌ daily_score_history 表不存在！请执行迁移SQL。');
+            return new Response(JSON.stringify({
+                error: '数据库表缺失，请联系管理员',
+                period: period,
+                startDate: startDate,
+                ranking: []
+            }), { status: 500, headers });
+        }
+
         const rows = await db.prepare(`
             SELECT 
                 u.id, 
@@ -38,6 +48,7 @@ export async function onRequest(context) {
         `).bind(startDate).all();
 
         const results = rows.results || [];
+        console.log(`✅ 周/月榜查询成功，周期起始 ${startDate}，共 ${results.length} 条记录`);
 
         return new Response(JSON.stringify({
             period: period,
@@ -46,6 +57,7 @@ export async function onRequest(context) {
         }), { headers });
 
     } catch (err) {
+        console.error('❌ period.js 错误:', err);
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
     }
 }
