@@ -937,6 +937,9 @@
                 var rawUser = result.user || result;
                 currentUser = normalizeUser(rawUser);
 
+                // 登录时检查每日重置
+                await checkDailyReset();
+
                 var today = DateUtils.getTodayUTC();
                 if (currentUser.dailyScoreDate !== today) {
                     currentUser.todayWarmup = 0;
@@ -956,6 +959,57 @@
                 alert('网络错误，请重试');
                 console.error(error);
                 hideLoading();
+            }
+        }
+
+        // ============================================================
+        // 每日重置检查（新增核心功能）
+        // ============================================================
+        async function checkDailyReset() {
+            if (!currentUser) return;
+            
+            const today = DateUtils.getTodayUTC();
+            const lastDate = currentUser.dailyScoreDate || '';
+            
+            // 如果是新的一天，重置所有每日数据
+            if (lastDate !== today) {
+                console.log(`🔄 检测到新的一天 (${today})，重置用户 ${currentUser.name} 的每日数据`);
+                
+                // 重置今日积分
+                currentUser.todayWarmup = 0;
+                currentUser.todayRank = 0;
+                currentUser.todayChallenge = 0;
+                currentUser.todayTotal = 0;
+                currentUser.dailyScoreDate = today;
+                
+                // 重置挑战赛使用次数
+                currentUser.challengeUsed = 0;
+                currentUser.challengeDate = today;
+                
+                // 重置排位赛次数（优先从云端同步）
+                const rankData = await syncRankDailyFromCloud(currentUser.name);
+                if (rankData) {
+                    currentUser.rankDaily = rankData;
+                    currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
+                } else {
+                    // 云端同步失败，本地重置
+                    currentUser.rankDaily = { date: today, used: 0 };
+                    currentUser.rankRemain = 3;
+                    setRankDailyCache(currentUser.name, currentUser.rankDaily);
+                }
+                
+                // 保存到云端
+                try {
+                    await saveUserToCloud(currentUser);
+                    console.log('✅ 每日数据重置并保存成功');
+                } catch (e) {
+                    console.error('⚠️ 重置数据保存失败:', e);
+                    // 至少保存到本地缓存
+                    setStorage('currentUser', currentUser);
+                }
+                
+                // 更新界面
+                updateMainUI();
             }
         }
 
@@ -993,7 +1047,6 @@
                         showPage('loginPage');
                         return null;
                     }
-                    // 其他错误只记录日志，不抛出
                     console.error('保存API返回错误:', result.error);
                     setStorage('currentUser', user);
                     return { success: false, error: result.error };
@@ -1042,6 +1095,10 @@
         // ============================================================
         async function updateMainUI() {
             if (!currentUser) return;
+            
+            // ⭐ 先执行每日重置检查
+            await checkDailyReset();
+            
             var today = DateUtils.getTodayUTC();
 
             if (currentUser.dailyScoreDate !== today) {
@@ -1126,6 +1183,10 @@
                 alert('请先登录');
                 return;
             }
+            
+            // ⭐ 进入任何模式前先执行每日重置检查
+            await checkDailyReset();
+            
             var cfg = getAdminConfig();
             if (!cfg[mode]) {
                 alert('⏳ 该赛制正在补充题库，暂未开放');
@@ -1471,7 +1532,6 @@
             currentUser.todayTotal = todayTotal;
             currentUser.dailyScoreDate = today;
 
-            // ⭐ 静默保存，不弹窗
             try {
                 var saved = await saveUserToCloud(currentUser);
                 if (saved && saved.user) {
@@ -2146,23 +2206,16 @@
                     currentUser = normalizeUser(savedUser);
                     var today = DateUtils.getTodayUTC();
 
-                    if (!currentUser.dailyScoreDate || currentUser.dailyScoreDate !== today) {
-                        currentUser.todayWarmup = 0;
-                        currentUser.todayRank = 0;
-                        currentUser.todayChallenge = 0;
-                        currentUser.todayTotal = 0;
-                        currentUser.dailyScoreDate = today;
-                        currentUser.challengeUsed = 0;
-                        currentUser.challengeDate = today;
+                    // ⭐ 先执行每日重置检查
+                    await checkDailyReset();
+
+                    // 然后获取排位赛数据
+                    var rankData = getRankDailyCache(currentUser.name);
+                    if (!rankData || rankData.date !== today) {
                         await syncRankDailyFromCloud(currentUser.name);
                     } else {
-                        var rankData = getRankDailyCache(currentUser.name);
-                        if (!rankData || rankData.date !== today) {
-                            await syncRankDailyFromCloud(currentUser.name);
-                        } else {
-                            currentUser.rankDaily = rankData;
-                            currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
-                        }
+                        currentUser.rankDaily = rankData;
+                        currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
                     }
 
                     showPage('mainPage');
@@ -2177,6 +2230,17 @@
             fetchAllUsers().then(function(list) {
                 cachedUsers = list;
             }).catch(function() {});
+
+            // ⭐ 每分钟检查一次是否需要重置（仅当用户登录时）
+            setInterval(async function() {
+                if (currentUser) {
+                    const today = DateUtils.getTodayUTC();
+                    if (currentUser.dailyScoreDate !== today) {
+                        await checkDailyReset();
+                        updateMainUI();
+                    }
+                }
+            }, 60000);
         }
 
         // ============================================================
