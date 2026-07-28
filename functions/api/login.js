@@ -42,16 +42,12 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
 
-        // ---------- 密码验证与自动升级 ----------
+        // ---------- 密码验证（兼容旧明文） ----------
         let passwordValid = false;
         const storedPwd = user.pwd;
-
-        // 判断是否为明文（不含冒号）
         if (!storedPwd.includes(':')) {
-            // 明文密码，直接比对
             if (storedPwd === pwd) {
                 passwordValid = true;
-                // 升级为哈希存储
                 const salt = generateSalt();
                 const hashed = await hashPassword(pwd, salt);
                 const newStored = `${salt}:${hashed}`;
@@ -61,7 +57,6 @@ export async function onRequest(context) {
                 console.log(`🔑 用户 ${name} 密码已升级为哈希存储`);
             }
         } else {
-            // 已存储哈希，使用 verifyPassword
             passwordValid = await verifyPassword(pwd, storedPwd);
         }
 
@@ -69,16 +64,17 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '密码错误' }), { status: 401, headers });
         }
 
-        // ---------- 数据一致性修复 ----------
+        // ---------- 总积分初始化（仅当为0时） ----------
         const calculatedTotal = (user.warmup_score || 0) + (user.rank_score || 0) + (user.challenge_score || 0);
-        if (calculatedTotal !== user.total_score) {
-            console.log(`🔧 修复用户 ${name} 的 total_score: ${user.total_score} -> ${calculatedTotal}`);
+        if (user.total_score === 0 && calculatedTotal > 0) {
+            console.log(`🔧 初始化用户 ${name} 的 total_score 为 ${calculatedTotal}`);
             await db.prepare(`UPDATE users SET total_score = ? WHERE id = ?`).bind(calculatedTotal, user.id).run();
             user.total_score = calculatedTotal;
         }
 
         const today = getBeijingDate();
 
+        // 每日重置（跨天清空今日数据）
         if (!user.daily_score_date) {
             user.daily_score_date = today;
             await db.prepare(`UPDATE users SET daily_score_date = ? WHERE id = ?`).bind(today, user.id).run();

@@ -21,7 +21,7 @@ export async function onRequest(context) {
 
         // 1. 获取用户现有数据
         const existingUser = await db.prepare(`
-            SELECT id, total_score, warmup_score, rank_score, challenge_score 
+            SELECT id, total_score, daily_score, warmup_score, rank_score, challenge_score 
             FROM users WHERE name = ?
         `).bind(name).first();
 
@@ -32,22 +32,21 @@ export async function onRequest(context) {
         const userId = existingUser.id;
         const dailyScoreDate = userData.dailyScoreDate || today;
 
-        const incomingWarmup = userData.warmupScore || 0;
-        const incomingRank = userData.rankScore || 0;
-        const incomingChallenge = userData.challengeScore || 0;
+        // 2. 更新各模式历史最高分
+        const newWarmupScore = Math.max(existingUser.warmup_score || 0, userData.warmupScore || 0);
+        const newRankScore = Math.max(existingUser.rank_score || 0, userData.rankScore || 0);
+        const newChallengeScore = Math.max(existingUser.challenge_score || 0, userData.challengeScore || 0);
 
-        const newWarmupScore = Math.max(existingUser.warmup_score || 0, incomingWarmup);
-        const newRankScore = Math.max(existingUser.rank_score || 0, incomingRank);
-        const newChallengeScore = Math.max(existingUser.challenge_score || 0, incomingChallenge);
+        // 3. 计算新的当日积分（三项今日最高分之和）
+        const newDailyScore = (userData.todayWarmup || 0) + (userData.todayRank || 0) + (userData.todayChallenge || 0);
+        const oldDailyScore = existingUser.daily_score || 0;
+        const delta = newDailyScore - oldDailyScore;
+        const newTotalScore = (existingUser.total_score || 0) + delta;
 
-        const newTotalScore = newWarmupScore + newRankScore + newChallengeScore;
+        console.log(`📊 用户 ${name}: 旧dailyScore=${oldDailyScore}, 新dailyScore=${newDailyScore}, 增量=${delta}, 总积分=${newTotalScore}`);
 
-        console.log(`📊 保存用户 ${name}: 总积分=${newTotalScore} (热身=${newWarmupScore}, 排位=${newRankScore}, 挑战=${newChallengeScore})`);
-
-        // ⭐ 不再更新 rank_daily 字段，该字段已废弃
-        // 只更新 users 表，排位赛数据单独由 rank_daily 表管理
-
-        const updateResult = await db.prepare(`
+        // 4. 更新 users 表
+        await db.prepare(`
             UPDATE users SET
                 unit = ?,
                 warmup_score = ?,
@@ -74,7 +73,7 @@ export async function onRequest(context) {
             userData.todayWarmup || 0,
             userData.todayRank || 0,
             userData.todayChallenge || 0,
-            userData.todayTotal || 0,
+            newDailyScore,
             dailyScoreDate,
             newTotalScore,
             userData.challengeUsed || 0,
@@ -83,19 +82,14 @@ export async function onRequest(context) {
             name
         ).run();
 
-        if (updateResult.meta && updateResult.meta.changes === 0) {
-            throw new Error('更新失败，用户可能已被删除或不存在');
-        }
-
-        // 3. 写入每日积分历史
-        const dailyScore = userData.todayTotal || 0;
+        // 5. 写入 daily_score_history（记录每日最终值，覆盖更新）
         await db.prepare(`
             INSERT INTO daily_score_history (user_id, date, daily_score)
             VALUES (?, ?, ?)
             ON CONFLICT(user_id, date) DO UPDATE SET daily_score = excluded.daily_score
-        `).bind(userId, dailyScoreDate, dailyScore).run();
+        `).bind(userId, dailyScoreDate, newDailyScore).run();
 
-        // 4. 查询更新后的用户数据并返回
+        // 6. 返回更新后的用户数据
         const updatedUser = await db.prepare(`
             SELECT 
                 id, name, unit, 
