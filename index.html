@@ -652,7 +652,7 @@
         }
 
         // ============================================================
-        // 数据适配器 - 关键修复
+        // 数据适配器 - 关键修复（移除后备计算，避免与排行榜不一致）
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
@@ -695,16 +695,11 @@
             var rankScore = user.rankScore || user.rank_score || 0;
             var challengeScore = user.challengeScore || user.challenge_score || 0;
 
-            // 总积分直接从数据库读取
+            // 总积分直接从数据库读取，不再使用后备计算
             var totalScore = user.totalScore || user.total_score || 0;
 
-            // 如果 totalScore 为 0，从各模式积分计算
-            if (totalScore === 0) {
-                totalScore = warmupScore + rankScore + challengeScore;
-            }
-
             console.log('📥 totalScore 解析: user.totalScore=' + user.totalScore + ', user.total_score=' + user.total_score +
-                ', 计算结果=' + totalScore);
+                ', 最终值=' + totalScore);
 
             var result = {
                 id: user.id,
