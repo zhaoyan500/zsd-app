@@ -20,16 +20,22 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
 
-        // ⭐ 关键：必须包含 daily_score_date
+        // ⭐ 使用 COALESCE 确保 NULL 值被正确处理
         const user = await db.prepare(`
-            SELECT 
-                id, name, unit, pwd, 
-                warmup_score, rank_score, challenge_score,
-                today_warmup_score, today_rank_score, today_challenge_score,
-                daily_score, daily_score_date, total_score,
-                warmup_date, challenge_date, challenge_used, version, created_at, updated_at
-            FROM users WHERE name = ?
-        `).bind(name).first();
+                SELECT 
+                    id, name, unit, pwd, 
+                    COALESCE(warmup_score, 0) as warmup_score,
+                    COALESCE(rank_score, 0) as rank_score,
+                    COALESCE(challenge_score, 0) as challenge_score,
+                    COALESCE(today_warmup_score, 0) as today_warmup_score,
+                    COALESCE(today_rank_score, 0) as today_rank_score,
+                    COALESCE(today_challenge_score, 0) as today_challenge_score,
+                    COALESCE(daily_score, 0) as daily_score,
+                    daily_score_date,
+                    COALESCE(total_score, 0) as total_score,
+                    warmup_date, challenge_date, challenge_used, version, created_at, updated_at
+                FROM users WHERE name = ?
+            `).bind(name).first();
 
         if (!user) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
@@ -41,62 +47,75 @@ export async function onRequest(context) {
 
         const today = new Date().toISOString().split('T')[0];
 
-        // ⭐ 如果 daily_score_date 为空或日期不同，重置今日数据
+        // ⭐ 如果 daily_score_date 为空或日期不同，重置今日数据但保留 total_score
         if (!user.daily_score_date || user.daily_score_date !== today) {
             console.log(`🔄 用户 ${name}: daily_score_date 从 ${user.daily_score_date} 更新为 ${today}`);
-            
+            console.log(`📊 用户 ${name}: total_score 保持不变: ${user.total_score}`);
+
             await db.prepare(`
-                UPDATE users SET 
-                    daily_score = 0, 
-                    daily_score_date = ?,
-                    today_warmup_score = 0,
-                    today_rank_score = 0,
-                    today_challenge_score = 0,
-                    updated_at = datetime('now')
-                WHERE id = ?
-            `).bind(today, user.id).run();
-            
+                    UPDATE users SET 
+                        daily_score = 0, 
+                        daily_score_date = ?,
+                        today_warmup_score = 0,
+                        today_rank_score = 0,
+                        today_challenge_score = 0,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                `).bind(today, user.id).run();
+
             user.daily_score = 0;
             user.daily_score_date = today;
             user.today_warmup_score = 0;
             user.today_rank_score = 0;
             user.today_challenge_score = 0;
+            // ⭐ total_score 保持不变
         }
 
         // 重置挑战赛使用次数
         if (user.challenge_date !== today) {
             await db.prepare(`
-                UPDATE users SET 
-                    challenge_used = 0, 
-                    challenge_date = ?,
-                    updated_at = datetime('now')
-                WHERE id = ?
-            `).bind(today, user.id).run();
+                    UPDATE users SET 
+                        challenge_used = 0, 
+                        challenge_date = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                `).bind(today, user.id).run();
             user.challenge_used = 0;
             user.challenge_date = today;
         }
 
         // 排位赛每日记录
         let rankDaily = await db.prepare(`
-            SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
-        `).bind(user.id, today).first();
-        
+                SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
+            `).bind(user.id, today).first();
+
         if (!rankDaily) {
             await db.prepare(`
-                INSERT INTO rank_daily (user_id, date, used) VALUES (?, ?, 0)
-            `).bind(user.id, today).run();
+                    INSERT INTO rank_daily (user_id, date, used) VALUES (?, ?, 0)
+                `).bind(user.id, today).run();
             rankDaily = { used: 0 };
         }
-        
+
         const used = rankDaily.used || 0;
         const rankRemain = Math.max(0, 3 - used);
+
+        // ⭐ 如果 total_score 为 0，重新计算
+        if (user.total_score === 0) {
+            user.total_score = (user.warmup_score || 0) + (user.rank_score || 0) + (user.challenge_score || 0);
+            // 更新数据库
+            await db.prepare(`
+                    UPDATE users SET total_score = ? WHERE id = ?
+                `).bind(user.total_score, user.id).run();
+        }
+
+        console.log(`📤 用户 ${name} 登录: total_score=${user.total_score}, daily_score_date=${user.daily_score_date}`);
 
         // ⭐ 删除密码
         delete user.pwd;
 
-        // ⭐ 构建返回数据，确保包含所有字段
-        return new Response(JSON.stringify({ 
-            success: true, 
+        // ⭐ 构建返回数据
+        return new Response(JSON.stringify({
+            success: true,
             user: {
                 id: user.id,
                 name: user.name,

@@ -17,60 +17,66 @@ export async function onRequest(context) {
         const db = env.D1_DB;
         const today = new Date().toISOString().split('T')[0];
 
-        // 1. 获取用户ID
-        const user = await db.prepare('SELECT id FROM users WHERE name = ?').bind(name).first();
-        if (!user) {
+        // 1. 获取用户完整数据
+        const existingUser = await db.prepare(`
+                SELECT id, total_score, warmup_score, rank_score, challenge_score 
+                FROM users WHERE name = ?
+            `).bind(name).first();
+
+        if (!existingUser) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
 
-        const userId = user.id;
-        
-        // ⭐ 使用传入的 dailyScoreDate，如果没有则使用今天
+        const userId = existingUser.id;
         const dailyScoreDate = userData.dailyScoreDate || today;
-        
-        // ⭐ 确保 totalScore 正确
-        let totalScore = userData.totalScore || 0;
-        if (totalScore === 0) {
-            const warmupScore = userData.warmupScore || 0;
-            const rankScore = userData.rankScore || 0;
-            const challengeScore = userData.challengeScore || 0;
-            totalScore = warmupScore + rankScore + challengeScore;
+
+        // ⭐ 关键修复：从数据库中读取现有的总积分
+        let totalScore = existingUser.total_score || 0;
+
+        // 获取用户传入的积分
+        const incomingWarmup = userData.warmupScore || 0;
+        const incomingRank = userData.rankScore || 0;
+        const incomingChallenge = userData.challengeScore || 0;
+
+        // ⭐ 取最大值（历史最高分）
+        const newWarmupScore = Math.max(existingUser.warmup_score || 0, incomingWarmup);
+        const newRankScore = Math.max(existingUser.rank_score || 0, incomingRank);
+        const newChallengeScore = Math.max(existingUser.challenge_score || 0, incomingChallenge);
+
+        // ⭐ 重新计算总积分
+        const calculatedTotal = newWarmupScore + newRankScore + newChallengeScore;
+
+        // ⭐ 如果计算出的总积分大于当前总积分，则更新
+        if (calculatedTotal > totalScore) {
+            totalScore = calculatedTotal;
+            console.log(`📊 总积分更新: ${existingUser.total_score || 0} -> ${totalScore}`);
         }
 
-        // ⭐ 获取当前用户数据以保留历史最高分
-        const currentUser = await db.prepare(`
-            SELECT warmup_score, rank_score, challenge_score 
-            FROM users WHERE id = ?
-        `).bind(userId).first();
-
-        // ⭐ 只更新今日数据，不覆盖历史最高分（除非新的分数更高）
-        const newWarmupScore = Math.max(currentUser?.warmup_score || 0, userData.warmupScore || 0);
-        const newRankScore = Math.max(currentUser?.rank_score || 0, userData.rankScore || 0);
-        const newChallengeScore = Math.max(currentUser?.challenge_score || 0, userData.challengeScore || 0);
+        console.log(`📤 保存用户 ${name}: totalScore=${totalScore}, dailyScoreDate=${dailyScoreDate}`);
 
         // 2. 更新 users 表
         const rankDailyJson = JSON.stringify(userData.rankDaily || { date: dailyScoreDate, used: 0 });
-        
+
         await db.prepare(`
-            UPDATE users SET
-                unit = ?,
-                warmup_score = ?,
-                warmup_date = ?,
-                rank_score = ?,
-                challenge_score = ?,
-                today_warmup_score = ?,
-                today_rank_score = ?,
-                today_challenge_score = ?,
-                daily_score = ?,
-                daily_score_date = ?,
-                total_score = ?,
-                challenge_used = ?,
-                challenge_date = ?,
-                rank_daily = ?,
-                version = ?,
-                updated_at = datetime('now')
-            WHERE name = ?
-        `).bind(
+                UPDATE users SET
+                    unit = ?,
+                    warmup_score = ?,
+                    warmup_date = ?,
+                    rank_score = ?,
+                    challenge_score = ?,
+                    today_warmup_score = ?,
+                    today_rank_score = ?,
+                    today_challenge_score = ?,
+                    daily_score = ?,
+                    daily_score_date = ?,
+                    total_score = ?,
+                    challenge_used = ?,
+                    challenge_date = ?,
+                    rank_daily = ?,
+                    version = ?,
+                    updated_at = datetime('now')
+                WHERE name = ?
+            `).bind(
             userData.unit || '',
             newWarmupScore,
             userData.warmupDate || '',
@@ -92,26 +98,26 @@ export async function onRequest(context) {
         // 3. 写入 daily_score_history 表
         const dailyScore = userData.todayTotal || 0;
         await db.prepare(`
-            INSERT INTO daily_score_history (user_id, date, daily_score)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id, date) DO UPDATE SET daily_score = excluded.daily_score
-        `).bind(userId, dailyScoreDate, dailyScore).run();
+                INSERT INTO daily_score_history (user_id, date, daily_score)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, date) DO UPDATE SET daily_score = excluded.daily_score
+            `).bind(userId, dailyScoreDate, dailyScore).run();
 
         // 4. 返回更新后的用户数据
         const updatedUser = await db.prepare(`
-            SELECT 
-                id, name, unit, 
-                warmup_score, rank_score, challenge_score,
-                today_warmup_score, today_rank_score, today_challenge_score,
-                daily_score, daily_score_date, total_score,
-                warmup_date, challenge_date, challenge_used, version, created_at, updated_at
-            FROM users WHERE name = ?
-        `).bind(name).first();
+                SELECT 
+                    id, name, unit, 
+                    warmup_score, rank_score, challenge_score,
+                    today_warmup_score, today_rank_score, today_challenge_score,
+                    daily_score, daily_score_date, total_score,
+                    warmup_date, challenge_date, challenge_used, version, created_at, updated_at
+                FROM users WHERE name = ?
+            `).bind(name).first();
 
         if (updatedUser) {
             const rankD = await db.prepare(`
-                SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
-            `).bind(updatedUser.id, dailyScoreDate).first();
+                    SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
+                `).bind(updatedUser.id, dailyScoreDate).first();
             updatedUser.rank_remain = rankD ? Math.max(0, 3 - (rankD.used || 0)) : 3;
             updatedUser.rankDaily = { date: dailyScoreDate, used: rankD ? (rankD.used || 0) : 0 };
         }
