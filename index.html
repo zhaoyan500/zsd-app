@@ -977,7 +977,7 @@
         }
 
         // ============================================================
-        // 登录 - 关键修复
+        // 登录 - 关键修复：增加本地缓存恢复逻辑
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
@@ -1019,6 +1019,54 @@
 
                 if (currentUser.totalScore === undefined || currentUser.totalScore === null) {
                     currentUser.totalScore = 0;
+                }
+
+                // ---------- 本地缓存恢复逻辑 ----------
+                const localUser = getStorage('currentUser', null);
+                if (localUser && (localUser.warmupScore > 0 || localUser.rankScore > 0 || localUser.challengeScore > 0)) {
+                    const dbWarmup = currentUser.warmupScore || 0;
+                    const dbRank = currentUser.rankScore || 0;
+                    const dbChallenge = currentUser.challengeScore || 0;
+                    if (dbWarmup === 0 && dbRank === 0 && dbChallenge === 0) {
+                        console.log('⚠️ 数据库历史积分为0，但本地缓存有数据，尝试恢复...');
+                        try {
+                            const restoreData = {
+                                name: localUser.name,
+                                userData: {
+                                    warmupScore: localUser.warmupScore || 0,
+                                    rankScore: localUser.rankScore || 0,
+                                    challengeScore: localUser.challengeScore || 0,
+                                    warmupDate: localUser.warmupDate || '',
+                                    rankDaily: localUser.rankDaily || { date: DateUtils.getTodayCN(), used: 0 },
+                                    unit: localUser.unit || '',
+                                    todayWarmup: localUser.todayWarmup || 0,
+                                    todayRank: localUser.todayRank || 0,
+                                    todayChallenge: localUser.todayChallenge || 0,
+                                    todayTotal: localUser.todayTotal || 0,
+                                    dailyScoreDate: localUser.dailyScoreDate || DateUtils.getTodayCN(),
+                                    challengeUsed: localUser.challengeUsed || 0,
+                                    challengeDate: localUser.challengeDate || '',
+                                    version: (localUser.version || 1) + 1
+                                }
+                            };
+                            const result = await apiCall('/save', 'POST', restoreData);
+                            if (result && result.user) {
+                                const restored = normalizeUser(result.user);
+                                if (restored) {
+                                    currentUser = restored;
+                                    if (result.user.rankDaily) {
+                                        currentUser.rankDaily = result.user.rankDaily;
+                                        currentUser.rankRemain = result.user.rank_remain !== undefined ? result.user.rank_remain : 3;
+                                    }
+                                    setStorage('currentUser', currentUser);
+                                    console.log('✅ 数据已从本地缓存恢复成功');
+                                }
+                            }
+                        } catch (e) {
+                            console.error('❌ 数据恢复失败:', e);
+                            alert('检测到本地有数据但服务器未保存，自动恢复失败，请重试或联系管理员。');
+                        }
+                    }
                 }
 
                 setStorage('currentUser', currentUser);
@@ -1118,7 +1166,7 @@
         }
 
         // ============================================================
-        // 保存用户数据到云端（修复：不再发送 totalScore，由后端计算）
+        // 保存用户数据到云端（增强错误处理，抛出异常）
         // ============================================================
         async function saveUserToCloud(user) {
             if (!user || !user.name) {
@@ -1127,7 +1175,6 @@
             }
 
             try {
-                // 构建要发送的数据对象（不包含 totalScore，由后端计算）
                 const userData = {
                     id: user.id,
                     name: user.name,
@@ -1153,20 +1200,19 @@
 
                 if (result && result.error) {
                     console.error('保存API返回错误:', result.error);
+                    // 保存失败，但保留本地缓存，不覆盖
                     setStorage('currentUser', user);
-                    return { success: false, error: result.error };
+                    // 抛出错误以便上层捕获并提示用户
+                    throw new Error(result.error);
                 }
 
                 if (result && result.user) {
-                    // 后端返回了完整的用户数据（包含正确的 totalScore）
                     const updated = normalizeUser(result.user);
                     if (currentUser) {
-                        // 保留 rankDaily 等非数据库字段（可能没有在数据库中存储）
                         if (result.user.rankDaily) {
                             updated.rankDaily = result.user.rankDaily;
                             updated.rankRemain = result.user.rank_remain !== undefined ? result.user.rank_remain : 3;
                         }
-                        // 使用后端返回的 totalScore
                         updated.totalScore = updated.totalScore || (updated.warmupScore + updated.rankScore + updated.challengeScore);
                         setRankDailyCache(updated.name, updated.rankDaily);
                     }
@@ -1177,12 +1223,14 @@
                     return { success: true, user: result.user };
                 }
 
+                // 如果没有返回user，但也没有错误，视为成功（但数据未变）
                 setStorage('currentUser', user);
                 return { success: true, user: user };
             } catch (error) {
                 console.error('保存失败:', error);
                 setStorage('currentUser', user);
-                return { success: false, error: error.message };
+                // 向上抛出错误，由上层处理（如弹窗提示）
+                throw error;
             }
         }
 
@@ -1573,7 +1621,7 @@
         }
 
         // ============================================================
-        // 答题结束（修复：不再累加 totalScore，由后端计算）
+        // 答题结束（修复：保存失败时提示并保留本地数据）
         // ============================================================
         async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
@@ -1636,17 +1684,13 @@
             currentUser.todayTotal = todayTotal;
             currentUser.dailyScoreDate = today;
 
-            // ⭐ 不再手动累加 totalScore，由后端计算
-
+            // 尝试保存到云端
             try {
-                // 保存到云端，后端会返回最新的 totalScore
                 var saved = await saveUserToCloud(currentUser);
                 if (saved && saved.user) {
-                    // 使用后端返回的完整用户数据更新当前用户
                     var normalized = normalizeUser(saved.user);
                     if (normalized) {
                         currentUser = normalized;
-                        // 确保 rankDaily 等非数据库字段保留
                         if (saved.user.rankDaily) {
                             currentUser.rankDaily = saved.user.rankDaily;
                             currentUser.rankRemain = saved.user.rank_remain !== undefined ? saved.user.rank_remain : 3;
@@ -1657,15 +1701,17 @@
                 console.log('✅ 用户数据已保存到云端');
             } catch (e) {
                 console.error('❌ 云端保存失败:', e);
+                // 提示用户保存失败，但数据已保存在本地缓存，稍后可重试
+                alert('⚠️ 数据保存失败，但本地已记录，请稍后重新登录或联系管理员。错误：' + e.message);
+                // 保留本地数据
                 setStorage('currentUser', currentUser);
             }
 
-            // 显示结果页面
+            // 显示结果页面（无论保存是否成功，都展示本次得分）
             document.getElementById('resName').textContent = currentUser.name;
             document.getElementById('resUnit').textContent = currentUser.unit;
             document.getElementById('resMode').textContent = getModeIcon(mode) + ' ' + getModeLabel(mode);
-            document.getElementById('totalScore').textContent = userScore; // 当次得分
-            // 注意：这里的 totalScore 是当次得分，不是总积分
+            document.getElementById('totalScore').textContent = userScore;
 
             var detail = [];
             if (mode === 'ranked' && comboCount > 0) detail.push('连击 x' + comboCount);
