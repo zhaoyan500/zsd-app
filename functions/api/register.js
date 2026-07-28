@@ -29,7 +29,7 @@ export async function onRequest(context) {
         const now = new Date().toISOString();
         const today = new Date().toISOString().split('T')[0];
 
-        // 初始化所有积分为 0
+        // ⭐ 初始化所有积分为 0，包含 daily_score_date
         await db.prepare(`
             INSERT INTO users (
                 id, name, unit, pwd, 
@@ -42,16 +42,27 @@ export async function onRequest(context) {
         `).bind(id, name, unit, pwd, today, now, now).run();
 
         const user = await db.prepare(`
-            SELECT id, name, unit, 
-                   warmup_score, rank_score, challenge_score, total_score,
-                   warmup_date, challenge_date, challenge_used, version, created_at
+            SELECT 
+                id, name, unit, 
+                warmup_score, rank_score, challenge_score, total_score,
+                today_warmup_score, today_rank_score, today_challenge_score,
+                daily_score, daily_score_date,
+                warmup_date, challenge_date, challenge_used, version, created_at
             FROM users WHERE id = ?
         `).bind(id).first();
 
-        user.rank_remain = 3; // 新用户默认剩余3次
+        // ⭐ 返回用户数据，包含 rank_remain
+        return new Response(JSON.stringify({ 
+            success: true, 
+            user: {
+                ...user,
+                rank_remain: 3,
+                rankDaily: { date: today, used: 0 }
+            }
+        }), { headers });
 
-        return new Response(JSON.stringify({ success: true, user: user }), { headers });
     } catch (err) {
+        console.error('register.js error:', err);
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
     }
 }

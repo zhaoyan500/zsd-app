@@ -25,10 +25,10 @@ export async function onRequest(context) {
 
         const userId = user.id;
         
-        // ⭐ 修复：使用传入的 dailyScoreDate，如果没有则使用今天
+        // ⭐ 使用传入的 dailyScoreDate，如果没有则使用今天
         const dailyScoreDate = userData.dailyScoreDate || today;
-
-        // ⭐ 修复：计算总积分
+        
+        // ⭐ 确保 totalScore 正确
         let totalScore = userData.totalScore || 0;
         if (totalScore === 0) {
             const warmupScore = userData.warmupScore || 0;
@@ -44,16 +44,12 @@ export async function onRequest(context) {
         `).bind(userId).first();
 
         // ⭐ 只更新今日数据，不覆盖历史最高分（除非新的分数更高）
-        const newWarmupScore = Math.max(currentUser.warmup_score || 0, userData.warmupScore || 0);
-        const newRankScore = Math.max(currentUser.rank_score || 0, userData.rankScore || 0);
-        const newChallengeScore = Math.max(currentUser.challenge_score || 0, userData.challengeScore || 0);
+        const newWarmupScore = Math.max(currentUser?.warmup_score || 0, userData.warmupScore || 0);
+        const newRankScore = Math.max(currentUser?.rank_score || 0, userData.rankScore || 0);
+        const newChallengeScore = Math.max(currentUser?.challenge_score || 0, userData.challengeScore || 0);
 
         // 2. 更新 users 表
         const rankDailyJson = JSON.stringify(userData.rankDaily || { date: dailyScoreDate, used: 0 });
-        
-        console.log(`📤 保存用户 ${name}: totalScore=${totalScore}, dailyScoreDate=${dailyScoreDate}`);
-        console.log(`📊 历史最高: 热身=${newWarmupScore}, 排位=${newRankScore}, 挑战=${newChallengeScore}`);
-        console.log(`📊 今日数据: 热身=${userData.todayWarmup || 0}, 排位=${userData.todayRank || 0}, 挑战=${userData.todayChallenge || 0}`);
         
         await db.prepare(`
             UPDATE users SET
@@ -93,7 +89,7 @@ export async function onRequest(context) {
             name
         ).run();
 
-        // 3. 写入 daily_score_history 表（用于周/月榜）
+        // 3. 写入 daily_score_history 表
         const dailyScore = userData.todayTotal || 0;
         await db.prepare(`
             INSERT INTO daily_score_history (user_id, date, daily_score)
@@ -112,7 +108,6 @@ export async function onRequest(context) {
             FROM users WHERE name = ?
         `).bind(name).first();
 
-        // ⭐ 添加 rankDaily 信息
         if (updatedUser) {
             const rankD = await db.prepare(`
                 SELECT used FROM rank_daily WHERE user_id = ? AND date = ?

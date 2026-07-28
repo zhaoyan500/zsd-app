@@ -20,7 +20,7 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
 
-        // ⭐ 查询所有字段
+        // ⭐ 关键：必须包含 daily_score_date
         const user = await db.prepare(`
             SELECT 
                 id, name, unit, pwd, 
@@ -39,11 +39,11 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '密码错误' }), { status: 401, headers });
         }
 
-        const today = new Date().toISOString().split('T')[0'];
+        const today = new Date().toISOString().split('T')[0];
 
-        // ⭐ 如果日期不同，重置今日数据（但保留历史最高分）
-        if (user.daily_score_date !== today) {
-            console.log(`🔄 用户 ${name} 日期变化: ${user.daily_score_date} -> ${today}，重置今日数据`);
+        // ⭐ 如果 daily_score_date 为空或日期不同，重置今日数据
+        if (!user.daily_score_date || user.daily_score_date !== today) {
+            console.log(`🔄 用户 ${name}: daily_score_date 从 ${user.daily_score_date} 更新为 ${today}`);
             
             await db.prepare(`
                 UPDATE users SET 
@@ -56,7 +56,6 @@ export async function onRequest(context) {
                 WHERE id = ?
             `).bind(today, user.id).run();
             
-            // 更新对象
             user.daily_score = 0;
             user.daily_score_date = today;
             user.today_warmup_score = 0;
@@ -90,13 +89,38 @@ export async function onRequest(context) {
         }
         
         const used = rankDaily.used || 0;
-        user.rank_remain = Math.max(0, 3 - used);
-        user.rankDaily = { date: today, used: used };
+        const rankRemain = Math.max(0, 3 - used);
 
         // ⭐ 删除密码
         delete user.pwd;
 
-        return new Response(JSON.stringify({ success: true, user: user }), { headers });
+        // ⭐ 构建返回数据，确保包含所有字段
+        return new Response(JSON.stringify({ 
+            success: true, 
+            user: {
+                id: user.id,
+                name: user.name,
+                unit: user.unit || '',
+                warmup_score: user.warmup_score || 0,
+                rank_score: user.rank_score || 0,
+                challenge_score: user.challenge_score || 0,
+                today_warmup_score: user.today_warmup_score || 0,
+                today_rank_score: user.today_rank_score || 0,
+                today_challenge_score: user.today_challenge_score || 0,
+                daily_score: user.daily_score || 0,
+                daily_score_date: user.daily_score_date || today,
+                total_score: user.total_score || 0,
+                warmup_date: user.warmup_date || '',
+                challenge_date: user.challenge_date || '',
+                challenge_used: user.challenge_used || 0,
+                version: user.version || 1,
+                created_at: user.created_at,
+                updated_at: user.updated_at,
+                rank_remain: rankRemain,
+                rankDaily: { date: today, used: used }
+            }
+        }), { headers });
+
     } catch (err) {
         console.error('login.js error:', err);
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });

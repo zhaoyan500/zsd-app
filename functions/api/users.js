@@ -10,9 +10,12 @@ export async function onRequest(context) {
         const db = env.D1_DB;
 
         const users = await db.prepare(`
-            SELECT id, name, unit, 
-                   warmup_score, rank_score, challenge_score, total_score,
-                   warmup_date, challenge_date, challenge_used, version, created_at
+            SELECT 
+                id, name, unit, 
+                warmup_score, rank_score, challenge_score, total_score,
+                today_warmup_score, today_rank_score, today_challenge_score,
+                daily_score, daily_score_date,
+                warmup_date, challenge_date, challenge_used, version, created_at, updated_at
             FROM users
             ORDER BY total_score DESC
         `).all();
@@ -21,6 +24,11 @@ export async function onRequest(context) {
         const today = new Date().toISOString().split('T')[0];
 
         for (const user of results) {
+            // ⭐ 确保 daily_score_date 有值
+            if (!user.daily_score_date) {
+                user.daily_score_date = today;
+            }
+            
             let rankDaily = await db.prepare(`
                 SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
             `).bind(user.id, today).first();
@@ -36,6 +44,7 @@ export async function onRequest(context) {
 
         return new Response(JSON.stringify(results), { headers });
     } catch (err) {
+        console.error('users.js error:', err);
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
     }
 }
