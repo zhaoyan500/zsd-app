@@ -20,13 +20,14 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
 
-        // ⭐ 修复：查询所有需要的字段
+        // ⭐ 查询所有字段
         const user = await db.prepare(`
-            SELECT id, name, unit, pwd, 
-                   warmup_score, rank_score, challenge_score,
-                   today_warmup_score, today_rank_score, today_challenge_score,
-                   daily_score, daily_score_date, total_score,
-                   warmup_date, challenge_date, challenge_used, version, created_at, updated_at
+            SELECT 
+                id, name, unit, pwd, 
+                warmup_score, rank_score, challenge_score,
+                today_warmup_score, today_rank_score, today_challenge_score,
+                daily_score, daily_score_date, total_score,
+                warmup_date, challenge_date, challenge_used, version, created_at, updated_at
             FROM users WHERE name = ?
         `).bind(name).first();
 
@@ -38,13 +39,12 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '密码错误' }), { status: 401, headers });
         }
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = new Date().toISOString().split('T')[0'];
 
-        // ⭐ 修复：只有在日期不同时才重置今日数据，且保留历史最高分
+        // ⭐ 如果日期不同，重置今日数据（但保留历史最高分）
         if (user.daily_score_date !== today) {
-            console.log(`🔄 用户 ${name} 的日期从 ${user.daily_score_date} 更新到 ${today}，重置今日数据`);
+            console.log(`🔄 用户 ${name} 日期变化: ${user.daily_score_date} -> ${today}，重置今日数据`);
             
-            // 重置今日数据，但保留 warmup_score, rank_score, challenge_score（历史最高）
             await db.prepare(`
                 UPDATE users SET 
                     daily_score = 0, 
@@ -56,7 +56,7 @@ export async function onRequest(context) {
                 WHERE id = ?
             `).bind(today, user.id).run();
             
-            // 更新本地用户对象
+            // 更新对象
             user.daily_score = 0;
             user.daily_score_date = today;
             user.today_warmup_score = 0;
@@ -93,6 +93,7 @@ export async function onRequest(context) {
         user.rank_remain = Math.max(0, 3 - used);
         user.rankDaily = { date: today, used: used };
 
+        // ⭐ 删除密码
         delete user.pwd;
 
         return new Response(JSON.stringify({ success: true, user: user }), { headers });

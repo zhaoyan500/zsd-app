@@ -15,7 +15,7 @@ export async function onRequest(context) {
         }
 
         const db = env.D1_DB;
-        const today = DateUtils.getTodayCN ? DateUtils.getTodayCN() : new Date().toISOString().split('T')[0];
+        const today = new Date().toISOString().split('T')[0];
 
         // 1. 获取用户ID
         const user = await db.prepare('SELECT id FROM users WHERE name = ?').bind(name).first();
@@ -28,7 +28,7 @@ export async function onRequest(context) {
         // ⭐ 修复：使用传入的 dailyScoreDate，如果没有则使用今天
         const dailyScoreDate = userData.dailyScoreDate || today;
 
-        // ⭐ 修复：计算总积分（累加所有模式积分）
+        // ⭐ 修复：计算总积分
         let totalScore = userData.totalScore || 0;
         if (totalScore === 0) {
             const warmupScore = userData.warmupScore || 0;
@@ -37,10 +37,23 @@ export async function onRequest(context) {
             totalScore = warmupScore + rankScore + challengeScore;
         }
 
+        // ⭐ 获取当前用户数据以保留历史最高分
+        const currentUser = await db.prepare(`
+            SELECT warmup_score, rank_score, challenge_score 
+            FROM users WHERE id = ?
+        `).bind(userId).first();
+
+        // ⭐ 只更新今日数据，不覆盖历史最高分（除非新的分数更高）
+        const newWarmupScore = Math.max(currentUser.warmup_score || 0, userData.warmupScore || 0);
+        const newRankScore = Math.max(currentUser.rank_score || 0, userData.rankScore || 0);
+        const newChallengeScore = Math.max(currentUser.challenge_score || 0, userData.challengeScore || 0);
+
         // 2. 更新 users 表
         const rankDailyJson = JSON.stringify(userData.rankDaily || { date: dailyScoreDate, used: 0 });
         
         console.log(`📤 保存用户 ${name}: totalScore=${totalScore}, dailyScoreDate=${dailyScoreDate}`);
+        console.log(`📊 历史最高: 热身=${newWarmupScore}, 排位=${newRankScore}, 挑战=${newChallengeScore}`);
+        console.log(`📊 今日数据: 热身=${userData.todayWarmup || 0}, 排位=${userData.todayRank || 0}, 挑战=${userData.todayChallenge || 0}`);
         
         await db.prepare(`
             UPDATE users SET
@@ -63,10 +76,10 @@ export async function onRequest(context) {
             WHERE name = ?
         `).bind(
             userData.unit || '',
-            userData.warmupScore || 0,
+            newWarmupScore,
             userData.warmupDate || '',
-            userData.rankScore || 0,
-            userData.challengeScore || 0,
+            newRankScore,
+            newChallengeScore,
             userData.todayWarmup || 0,
             userData.todayRank || 0,
             userData.todayChallenge || 0,
@@ -90,15 +103,16 @@ export async function onRequest(context) {
 
         // 4. 返回更新后的用户数据
         const updatedUser = await db.prepare(`
-            SELECT id, name, unit, 
-                   warmup_score, rank_score, challenge_score,
-                   today_warmup_score, today_rank_score, today_challenge_score,
-                   daily_score, daily_score_date, total_score,
-                   warmup_date, challenge_date, challenge_used, version, created_at, updated_at
+            SELECT 
+                id, name, unit, 
+                warmup_score, rank_score, challenge_score,
+                today_warmup_score, today_rank_score, today_challenge_score,
+                daily_score, daily_score_date, total_score,
+                warmup_date, challenge_date, challenge_used, version, created_at, updated_at
             FROM users WHERE name = ?
         `).bind(name).first();
 
-        // ⭐ 修复：添加 rankDaily 信息
+        // ⭐ 添加 rankDaily 信息
         if (updatedUser) {
             const rankD = await db.prepare(`
                 SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
