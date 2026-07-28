@@ -1,5 +1,5 @@
 // /functions/api/login.js
-import { getBeijingDate, verifyPassword } from './_utils.js';
+import { getBeijingDate, verifyPassword, generateSalt, hashPassword } from './_utils.js';
 
 export async function onRequest(context) {
     const { request, env } = context;
@@ -42,9 +42,30 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
 
-        // 验证密码（哈希比对）
-        const isValid = await verifyPassword(pwd, user.pwd);
-        if (!isValid) {
+        // ---------- 密码验证与自动升级 ----------
+        let passwordValid = false;
+        const storedPwd = user.pwd;
+
+        // 判断是否为明文（不含冒号）
+        if (!storedPwd.includes(':')) {
+            // 明文密码，直接比对
+            if (storedPwd === pwd) {
+                passwordValid = true;
+                // 升级为哈希存储
+                const salt = generateSalt();
+                const hashed = await hashPassword(pwd, salt);
+                const newStored = `${salt}:${hashed}`;
+                await db.prepare(`UPDATE users SET pwd = ?, version = version + 1, updated_at = datetime('now') WHERE id = ?`)
+                    .bind(newStored, user.id)
+                    .run();
+                console.log(`🔑 用户 ${name} 密码已升级为哈希存储`);
+            }
+        } else {
+            // 已存储哈希，使用 verifyPassword
+            passwordValid = await verifyPassword(pwd, storedPwd);
+        }
+
+        if (!passwordValid) {
             return new Response(JSON.stringify({ error: '密码错误' }), { status: 401, headers });
         }
 
