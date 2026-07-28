@@ -509,33 +509,20 @@
         // 日期工具 - 使用北京时间
         // ============================================================
         const DateUtils = {
-            // 获取北京时间今天的日期字符串 (YYYY-MM-DD)
             getTodayCN: function() {
                 const now = new Date();
-                // 转换为北京时间 (UTC+8)
                 const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
                 return beijingTime.toISOString().split('T')[0];
             },
-            // 判断两个日期是否是同一天（北京时间）
             isSameDay: function(dateStr1, dateStr2) {
                 if (!dateStr1 || !dateStr2) return false;
                 return dateStr1 === dateStr2;
             },
-            // 获取当前北京时间的时间字符串 HH:MM:SS
             getTimeCN: function() {
                 const now = new Date();
                 const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
                 return beijingTime.toISOString().split('T')[1].substring(0, 8);
             },
-            // 获取北京时间到午夜的毫秒数
-            getMsUntilMidnight: function() {
-                const now = new Date();
-                // 北京时间 23:59:59.999
-                const beijingMidnight = new Date(now);
-                beijingMidnight.setUTCHours(15, 59, 59, 999); // UTC 15:59:59 = 北京 23:59:59
-                return Math.max(0, beijingMidnight.getTime() - now.getTime());
-            },
-            // 兼容旧代码 - 返回北京时间今天的日期
             getTodayUTC: function() {
                 return this.getTodayCN();
             }
@@ -558,7 +545,7 @@
         let rankFilter = 'total';
         let audioCtx = null;
         var cachedUsers = [];
-        let isResetting = false; // 防止重复重置
+        let isResetting = false;
         let resetTimerId = null;
 
         // ============================================================
@@ -643,7 +630,7 @@
         }
 
         // ============================================================
-        // API 调用
+        // API 调用 - 增强错误处理
         // ============================================================
         async function apiCall(endpoint, method, data) {
             var options = {
@@ -655,6 +642,13 @@
             }
             try {
                 var response = await fetch(API_BASE + endpoint, options);
+                // 检查响应状态
+                if (!response.ok) {
+                    console.error('API响应错误:', response.status, response.statusText);
+                    var errorText = await response.text();
+                    console.error('错误详情:', errorText);
+                    return { error: '服务器错误: ' + response.status + ' ' + response.statusText, _httpError: true, status: response.status };
+                }
                 var result = await response.json();
                 if (result && result.results !== undefined) {
                     return result.results;
@@ -997,36 +991,29 @@
             const today = DateUtils.getTodayCN();
             const lastDate = currentUser.dailyScoreDate || '';
             
-            // 如果是新的一天，重置所有每日数据
             if (lastDate !== today) {
                 isResetting = true;
                 console.log(`🔄 北京时间 ${DateUtils.getTimeCN()} 检测到新的一天 (${today})，重置用户 ${currentUser.name} 的每日数据`);
                 
                 try {
-                    // 重置今日积分
                     currentUser.todayWarmup = 0;
                     currentUser.todayRank = 0;
                     currentUser.todayChallenge = 0;
                     currentUser.todayTotal = 0;
                     currentUser.dailyScoreDate = today;
-                    
-                    // 重置挑战赛使用次数
                     currentUser.challengeUsed = 0;
                     currentUser.challengeDate = today;
                     
-                    // 重置排位赛次数（优先从云端同步）
                     const rankData = await syncRankDailyFromCloud(currentUser.name);
                     if (rankData) {
                         currentUser.rankDaily = rankData;
                         currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
                     } else {
-                        // 云端同步失败，本地重置
                         currentUser.rankDaily = { date: today, used: 0 };
                         currentUser.rankRemain = 3;
                         setRankDailyCache(currentUser.name, currentUser.rankDaily);
                     }
                     
-                    // 保存到云端
                     try {
                         await saveUserToCloud(currentUser);
                         console.log('✅ 每日数据重置并保存成功');
@@ -1035,10 +1022,7 @@
                         setStorage('currentUser', currentUser);
                     }
                     
-                    // 显示通知提示
                     showDailyResetNotification();
-                    
-                    // 更新界面
                     updateMainUI();
                 } catch (e) {
                     console.error('❌ 每日重置失败:', e);
@@ -1048,11 +1032,7 @@
             }
         }
 
-        // ============================================================
-        // 显示每日重置通知
-        // ============================================================
         function showDailyResetNotification() {
-            // 显示浮动通知
             const container = document.getElementById('floatingTextContainer');
             const el = document.createElement('div');
             el.className = 'float-text';
@@ -1063,7 +1043,6 @@
             container.appendChild(el);
             el.addEventListener('animationend', function() { el.remove(); });
             
-            // 如果有通知权限，发送通知
             if (Notification.permission === 'granted') {
                 new Notification('🌅 每日数据已重置', {
                     body: `${currentUser.name}，今日积分和排位赛次数已重置，加油！`,
@@ -1073,14 +1052,19 @@
         }
 
         // ============================================================
-        // 保存用户数据到云端（静默处理错误）
+        // 保存用户数据到云端 - 增强错误处理
         // ============================================================
         async function saveUserToCloud(user) {
+            if (!user || !user.name) {
+                console.error('保存失败: 用户数据无效');
+                return { success: false, error: '用户数据无效' };
+            }
+            
             try {
                 var userData = {
                     id: user.id,
                     name: user.name,
-                    unit: user.unit,
+                    unit: user.unit || '',
                     warmupScore: user.warmupScore || 0,
                     warmupDate: user.warmupDate || '',
                     rankScore: user.rankScore || 0,
@@ -1094,19 +1078,21 @@
                     rankDaily: user.rankDaily || { date: DateUtils.getTodayCN(), used: 0 },
                     challengeUsed: user.challengeUsed || 0,
                     challengeDate: user.challengeDate || '',
-                    version: user.version || 1
+                    version: (user.version || 1) + 1
                 };
 
+                console.log('📤 保存用户数据:', userData.name, '版本:', userData.version);
+                
                 var result = await apiCall('/save', 'POST', { name: user.name, userData: userData });
 
                 if (result && result.error) {
+                    console.error('保存API返回错误:', result.error);
                     if (result.code === 'CONFLICT') {
                         alert('检测到数据冲突，请重新登录');
                         logoutUser();
                         showPage('loginPage');
                         return null;
                     }
-                    console.error('保存API返回错误:', result.error);
                     setStorage('currentUser', user);
                     return { success: false, error: result.error };
                 }
@@ -1121,6 +1107,7 @@
                     currentUser = updated;
                     setStorage('currentUser', currentUser);
                     await updateUserCache();
+                    console.log('✅ 用户数据保存成功');
                     return result;
                 }
 
@@ -1155,7 +1142,6 @@
         async function updateMainUI() {
             if (!currentUser) return;
             
-            // 先执行每日重置检查
             await checkDailyReset();
             
             var today = DateUtils.getTodayCN();
@@ -1243,7 +1229,6 @@
                 return;
             }
             
-            // 进入任何模式前先执行每日重置检查
             await checkDailyReset();
             
             var cfg = getAdminConfig();
@@ -1954,22 +1939,27 @@
         }
 
         // ============================================================
-        // 题库管理 (管理员)
+        // 题库管理 (管理员) - 修复新增后刷新问题
         // ============================================================
         let currentQuestionMode = 'warmup';
         let questionListData = [];
 
         async function loadQuestions(mode) {
             currentQuestionMode = mode;
-            document.getElementById('questionList').innerHTML = '<p class="text-center text-gray-400 py-2">加载中...</p>';
+            const container = document.getElementById('questionList');
+            container.innerHTML = '<p class="text-center text-gray-400 py-2">加载中...</p>';
             try {
-                const resp = await fetch(API_BASE + '/questions?mode=' + mode + '&adminKey=' + ADMIN_PWD);
+                const resp = await fetch(API_BASE + '/questions?mode=' + mode + '&_=' + Date.now());
+                if (!resp.ok) {
+                    throw new Error('HTTP ' + resp.status);
+                }
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error);
                 questionListData = data;
                 renderQuestionList(data);
             } catch (e) {
-                document.getElementById('questionList').innerHTML = '<p class="text-center text-red-500 py-2">加载失败：' + e.message + '</p>';
+                console.error('加载题库失败:', e);
+                container.innerHTML = '<p class="text-center text-red-500 py-2">加载失败：' + e.message + '</p>';
             }
         }
 
@@ -2068,6 +2058,7 @@
             }
 
             try {
+                showLoading();
                 const resp = await fetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
@@ -2075,26 +2066,32 @@
                 });
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error);
-                alert(id ? '题目已更新' : '题目已添加');
+                alert(id ? '✅ 题目已更新' : '✅ 题目已添加');
                 closeQuestionModal();
-                loadQuestions(currentQuestionMode);
+                // 重新加载当前模式的题库
+                await loadQuestions(currentQuestionMode);
+                hideLoading();
             } catch (e) {
                 alert('操作失败：' + e.message);
+                hideLoading();
             }
         }
 
         async function deleteQuestion(id) {
             if (!confirm('确定删除该题目吗？')) return;
             try {
+                showLoading();
                 const resp = await fetch(API_BASE + '/questions?id=' + id + '&adminKey=' + ADMIN_PWD, {
                     method: 'DELETE'
                 });
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error);
-                alert('已删除');
-                loadQuestions(currentQuestionMode);
+                alert('✅ 已删除');
+                await loadQuestions(currentQuestionMode);
+                hideLoading();
             } catch (e) {
                 alert('删除失败：' + e.message);
+                hideLoading();
             }
         }
 
@@ -2103,6 +2100,8 @@
             const mode = currentQuestionMode;
             const defaultQuestions = getDefaultQuiz(mode);
             try {
+                showLoading();
+                // 先删除该模式所有题目
                 const respList = await fetch(API_BASE + '/questions?mode=' + mode + '&adminKey=' + ADMIN_PWD);
                 const list = await respList.json();
                 if (Array.isArray(list)) {
@@ -2110,6 +2109,7 @@
                         await fetch(API_BASE + '/questions?id=' + q.id + '&adminKey=' + ADMIN_PWD, { method: 'DELETE' });
                     }
                 }
+                // 添加默认题目
                 for (const q of defaultQuestions) {
                     const payload = {
                         mode: mode,
@@ -2128,10 +2128,12 @@
                         body: JSON.stringify(payload)
                     });
                 }
-                alert('同步成功！');
-                loadQuestions(mode);
+                alert('✅ 同步成功！');
+                await loadQuestions(mode);
+                hideLoading();
             } catch (e) {
                 alert('同步失败：' + e.message);
+                hideLoading();
             }
         }
 
@@ -2144,6 +2146,8 @@
                 showPage('adminPage');
                 loadAdminConfig();
                 renderAdminData();
+                // 默认加载热身赛题库
+                loadQuestions('warmup');
             } else {
                 alert('密码错误，请重试');
             }
@@ -2241,7 +2245,7 @@
         }
 
         // ============================================================
-        // 初始化 - 启动自动重置定时器
+        // 初始化
         // ============================================================
         async function init() {
             if (!getStorage('adminConfig', null)) {
@@ -2265,10 +2269,8 @@
                     currentUser = normalizeUser(savedUser);
                     var today = DateUtils.getTodayCN();
 
-                    // 先执行每日重置检查
                     await checkDailyReset();
 
-                    // 然后获取排位赛数据
                     var rankData = getRankDailyCache(currentUser.name);
                     if (!rankData || rankData.date !== today) {
                         await syncRankDailyFromCloud(currentUser.name);
@@ -2290,12 +2292,10 @@
                 cachedUsers = list;
             }).catch(function() {});
 
-            // ============================================================
-            // ⭐ 核心：启动北京时间 00:00 自动重置定时器
-            // ============================================================
+            // 启动自动重置定时器
             startAutoResetTimer();
 
-            // 也保留每分钟检查作为备用（但主要依靠精确定时器）
+            // 每分钟检查一次作为备用
             setInterval(async function() {
                 if (currentUser) {
                     const today = DateUtils.getTodayCN();
@@ -2306,7 +2306,6 @@
                 }
             }, 60000);
             
-            // 请求通知权限
             if ('Notification' in window && Notification.permission === 'default') {
                 Notification.requestPermission();
             }
@@ -2315,52 +2314,30 @@
         }
 
         // ============================================================
-        // ⭐ 启动北京时间 00:00 自动重置定时器
+        // 启动北京时间 00:00 自动重置定时器
         // ============================================================
         function startAutoResetTimer() {
-            // 清除之前的定时器
             if (resetTimerId) {
                 clearTimeout(resetTimerId);
                 resetTimerId = null;
             }
             
-            // 计算到下一个北京时间 00:00 的毫秒数
             const now = new Date();
-            // 计算明天的 00:00 (北京时间)
-            const nextMidnight = new Date(now);
-            nextMidnight.setUTCHours(15, 0, 0, 0); // UTC 15:00 = 北京 23:00
-            // 如果今天已经过了 23:00，则取明天的 23:00
-            if (nextMidnight.getTime() <= now.getTime()) {
-                nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
-            }
-            // 北京 00:00 = UTC 16:00，但为了在 00:00 准时重置，我们设定在 00:00:01 执行
-            // 这样即使用户在 00:00:00 有操作，也会在 00:00:01 被重置
-            const resetTime = new Date(nextMidnight);
-            resetTime.setUTCHours(15, 0, 1, 0); // UTC 15:00:01 = 北京 23:00:01
-            // 实际上我们需要重置发生在北京 00:00:00，但为了保险，我们设定为 00:00:01
-            // 由于时区转换，北京 00:00 = UTC 16:00（前一天）
-            // 所以正确的计算方式：
-            // 北京时间 00:00 = UTC 16:00（前一天）
-            // 我们用更简单的方式：计算到明天北京 00:00 的毫秒数
-            
-            // 方法：获取当前北京时间的日期，然后构建明天 00:00:00 的 UTC 时间
             const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
             const beijingDate = beijingNow.toISOString().split('T')[0];
-            const tomorrow = new Date(beijingDate + 'T16:00:00.000Z'); // 北京 00:00 = UTC 16:00（前一天）
-            tomorrow.setUTCDate(tomorrow.getUTCDate() + 1); // 加一天到明天
+            const tomorrow = new Date(beijingDate + 'T16:00:00.000Z');
+            tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
             
             const msUntilReset = tomorrow.getTime() - now.getTime();
             
             console.log(`⏰ 距离下一次北京时间 00:00 重置还有 ${Math.floor(msUntilReset / 1000)} 秒`);
             
-            // 设置定时器
             resetTimerId = setTimeout(async function() {
                 console.log(`🌅 北京时间 00:00 自动重置定时器触发`);
                 if (currentUser) {
                     await checkDailyReset();
                     updateMainUI();
                 }
-                // 重置后重新设置下一次定时器
                 startAutoResetTimer();
             }, msUntilReset);
         }
