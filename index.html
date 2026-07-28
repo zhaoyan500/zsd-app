@@ -657,7 +657,7 @@
         function normalizeUser(user) {
             if (!user) return null;
 
-            console.log('📥 normalizeUser 原始数据:', user);
+            console.log('📥 normalizeUser 原始数据:', JSON.stringify(user));
 
             // 处理 rankDaily
             var rankDaily = user.rankDaily || null;
@@ -671,7 +671,7 @@
                 validRankDaily = rankDaily;
             }
 
-            // ⭐ 关键修复：获取 daily_score_date
+            // 获取 daily_score_date
             var dailyScoreDate = user.dailyScoreDate || user.daily_score_date || '';
 
             if (!dailyScoreDate && validRankDaily && validRankDaily.date) {
@@ -695,13 +695,18 @@
             var rankScore = user.rankScore || user.rank_score || 0;
             var challengeScore = user.challengeScore || user.challenge_score || 0;
 
-            // 总积分
+            // ⭐ 关键修复：总积分直接从数据库读取
             var totalScore = user.totalScore || user.total_score || 0;
+
+            // 如果 totalScore 为 0，从各模式积分计算
             if (totalScore === 0) {
                 totalScore = warmupScore + rankScore + challengeScore;
             }
 
-            return {
+            console.log('📥 totalScore 解析: user.totalScore=' + user.totalScore + ', user.total_score=' + user.total_score +
+                ', 计算结果=' + totalScore);
+
+            var result = {
                 id: user.id,
                 name: user.name,
                 unit: user.unit || '',
@@ -723,6 +728,9 @@
                 created_at: user.created_at,
                 updated_at: user.updated_at
             };
+
+            console.log('📥 normalizeUser 输出:', JSON.stringify(result));
+            return result;
         }
 
         // ============================================================
@@ -1157,7 +1165,8 @@
                 if (result && result.user) {
                     var updated = normalizeUser(result.user);
                     if (currentUser) {
-                        updated.rankDaily = updated.rankDaily || currentUser.rankDaily || { date: DateUtils.getTodayCN(), used: 0 };
+                        updated.rankDaily = updated.rankDaily || currentUser.rankDaily || { date: DateUtils.getTodayCN(),
+                            used: 0 };
                         updated.rankRemain = updated.rank_remain !== undefined ? updated.rank_remain : 3;
                         updated.totalScore = updated.totalScore || totalScore;
                         setRankDailyCache(updated.name, updated.rankDaily);
@@ -1238,7 +1247,8 @@
 
             var statusEl = document.getElementById('rankedStatus');
             if (statusEl) {
-                statusEl.textContent = '今日剩余: ' + rankRemain + '次 | 已用: ' + (3 - rankRemain) + '/3 | 最高: ' + (currentUser.todayRank || 0);
+                statusEl.textContent = '今日剩余: ' + rankRemain + '次 | 已用: ' + (3 - rankRemain) + '/3 | 最高: ' + (currentUser
+                    .todayRank || 0);
             }
 
             var badge = document.getElementById('rankBadge');
@@ -1255,8 +1265,10 @@
                 }
             }
 
-            document.getElementById('warmupStatus').textContent = currentUser.todayWarmup ? '今日最高: ' + currentUser.todayWarmup : '今日未玩';
-            document.getElementById('challengeStatus').textContent = '今日已用: ' + (currentUser.challengeUsed || 0) + '/1 | 最高: ' + (currentUser.todayChallenge || 0);
+            document.getElementById('warmupStatus').textContent = currentUser.todayWarmup ? '今日最高: ' + currentUser
+                .todayWarmup : '今日未玩';
+            document.getElementById('challengeStatus').textContent = '今日已用: ' + (currentUser.challengeUsed || 0) +
+                '/1 | 最高: ' + (currentUser.todayChallenge || 0);
 
             var cfg = getAdminConfig();
             var cards = document.querySelectorAll('.mode-card');
@@ -2009,23 +2021,23 @@
             let html = '';
             questions.forEach((q, idx) => {
                 html += `
-                    <div class="flex justify-between items-start p-3 bg-grayLight rounded-lg border">
-                        <div class="flex-1">
-                            <div class="font-medium">${idx+1}. ${q.question}</div>
-                            <div class="text-xs text-gray-600 grid grid-cols-2 gap-x-2 mt-1">
-                                <span>A. ${q.option_a}</span>
-                                <span>B. ${q.option_b}</span>
-                                <span>C. ${q.option_c}</span>
-                                <span>D. ${q.option_d}</span>
+                        <div class="flex justify-between items-start p-3 bg-grayLight rounded-lg border">
+                            <div class="flex-1">
+                                <div class="font-medium">${idx+1}. ${q.question}</div>
+                                <div class="text-xs text-gray-600 grid grid-cols-2 gap-x-2 mt-1">
+                                    <span>A. ${q.option_a}</span>
+                                    <span>B. ${q.option_b}</span>
+                                    <span>C. ${q.option_c}</span>
+                                    <span>D. ${q.option_d}</span>
+                                </div>
+                                <div class="text-xs text-primary mt-1">正确答案：${q.correct}</div>
                             </div>
-                            <div class="text-xs text-primary mt-1">正确答案：${q.correct}</div>
+                            <div class="flex gap-1 ml-2">
+                                <button onclick="editQuestion(${q.id})" class="text-blue-500 text-xs hover:underline">编辑</button>
+                                <button onclick="deleteQuestion(${q.id})" class="text-red-500 text-xs hover:underline">删除</button>
+                            </div>
                         </div>
-                        <div class="flex gap-1 ml-2">
-                            <button onclick="editQuestion(${q.id})" class="text-blue-500 text-xs hover:underline">编辑</button>
-                            <button onclick="deleteQuestion(${q.id})" class="text-red-500 text-xs hover:underline">删除</button>
-                        </div>
-                    </div>
-                `;
+                    `;
             });
             container.innerHTML = html;
         }
@@ -2198,7 +2210,8 @@
                 }
                 var html = '';
                 if (filtered.length === 0) {
-                    html = '<p class="text-gray-400 text-center py-4">' + (searchVal ? '🔍 未找到匹配用户' : '暂无注册用户') + '</p>';
+                    html = '<p class="text-gray-400 text-center py-4">' + (searchVal ? '🔍 未找到匹配用户' : '暂无注册用户') +
+                    '</p>';
                 } else {
                     for (var i = 0; i < filtered.length; i++) {
                         var u = filtered[i];
