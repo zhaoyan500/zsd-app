@@ -17,7 +17,7 @@ export async function onRequest(context) {
         const db = env.D1_DB;
         const today = new Date().toISOString().split('T')[0];
 
-        // 1. 获取用户完整数据
+        // 1. 获取用户现有数据
         const existingUser = await db.prepare(`
             SELECT id, total_score, warmup_score, rank_score, challenge_score 
             FROM users WHERE name = ?
@@ -30,25 +30,25 @@ export async function onRequest(context) {
         const userId = existingUser.id;
         const dailyScoreDate = userData.dailyScoreDate || today;
 
-        // 获取用户传入的积分（各模式最高分）
+        // 接收前端传入的各模式最高分
         const incomingWarmup = userData.warmupScore || 0;
         const incomingRank = userData.rankScore || 0;
         const incomingChallenge = userData.challengeScore || 0;
 
-        // 取最大值（历史最高分）
+        // 取历史最高（与数据库现有值比较）
         const newWarmupScore = Math.max(existingUser.warmup_score || 0, incomingWarmup);
         const newRankScore = Math.max(existingUser.rank_score || 0, incomingRank);
         const newChallengeScore = Math.max(existingUser.challenge_score || 0, incomingChallenge);
 
-        // ========== 核心修复：总积分始终为三项历史最高分之和 ==========
+        // 总积分 = 三项历史最高分之和
         const newTotalScore = newWarmupScore + newRankScore + newChallengeScore;
 
         console.log(`📊 保存用户 ${name}: 总积分=${newTotalScore} (热身=${newWarmupScore}, 排位=${newRankScore}, 挑战=${newChallengeScore})`);
 
-        // 2. 更新 users 表
         const rankDailyJson = JSON.stringify(userData.rankDaily || { date: dailyScoreDate, used: 0 });
 
-        await db.prepare(`
+        // 2. 执行更新
+        const updateResult = await db.prepare(`
             UPDATE users SET
                 unit = ?,
                 warmup_score = ?,
@@ -78,7 +78,7 @@ export async function onRequest(context) {
             userData.todayChallenge || 0,
             userData.todayTotal || 0,
             dailyScoreDate,
-            newTotalScore,          // 使用计算后的总积分
+            newTotalScore,
             userData.challengeUsed || 0,
             userData.challengeDate || '',
             rankDailyJson,
@@ -86,7 +86,12 @@ export async function onRequest(context) {
             name
         ).run();
 
-        // 3. 写入 daily_score_history 表
+        // 检查更新是否影响了行（若影响行数为0，说明WHERE条件未匹配，可能是用户被删除）
+        if (updateResult.meta.changes === 0) {
+            throw new Error('更新失败，用户可能已被删除或不存在');
+        }
+
+        // 3. 写入每日积分历史
         const dailyScore = userData.todayTotal || 0;
         await db.prepare(`
             INSERT INTO daily_score_history (user_id, date, daily_score)
@@ -94,7 +99,7 @@ export async function onRequest(context) {
             ON CONFLICT(user_id, date) DO UPDATE SET daily_score = excluded.daily_score
         `).bind(userId, dailyScoreDate, dailyScore).run();
 
-        // 4. 返回更新后的用户数据
+        // 4. 查询更新后的用户数据并返回
         const updatedUser = await db.prepare(`
             SELECT 
                 id, name, unit, 
