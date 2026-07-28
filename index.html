@@ -642,7 +642,6 @@
             }
             try {
                 var response = await fetch(API_BASE + endpoint, options);
-                // 检查响应状态
                 if (!response.ok) {
                     console.error('API响应错误:', response.status, response.statusText);
                     var errorText = await response.text();
@@ -884,7 +883,11 @@
                     el.classList.remove('quiz-mode');
                 }
                 if (pageId === 'rankPage') renderRank();
-                if (pageId === 'adminPage') renderAdminData();
+                if (pageId === 'adminPage') {
+                    renderAdminData();
+                    // 默认加载热身赛题库
+                    loadQuestions('warmup');
+                }
                 if (pageId === 'mainPage') updateMainUI();
             }
         }
@@ -940,7 +943,7 @@
         }
 
         // ============================================================
-        // 登录
+        // 登录 - 修复登录时误重置问题
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
@@ -960,15 +963,17 @@
                 currentUser = normalizeUser(rawUser);
 
                 var today = DateUtils.getTodayCN();
-                if (currentUser.dailyScoreDate !== today) {
-                    currentUser.todayWarmup = 0;
-                    currentUser.todayRank = 0;
-                    currentUser.todayChallenge = 0;
-                    currentUser.todayTotal = 0;
+                
+                // ⭐ 修复：登录时只检查日期，不强制重置
+                // 如果日期不同，checkDailyReset 会处理重置
+                if (currentUser.dailyScoreDate && currentUser.dailyScoreDate !== today) {
+                    await checkDailyReset();
+                } else if (!currentUser.dailyScoreDate) {
+                    // 没有日期记录，直接设置今天
                     currentUser.dailyScoreDate = today;
-                    currentUser.challengeUsed = 0;
-                    currentUser.challengeDate = today;
                 }
+                
+                // 获取排位赛数据
                 await syncRankDailyFromCloud(currentUser.name);
 
                 showPage('mainPage');
@@ -982,7 +987,7 @@
         }
 
         // ============================================================
-        // 每日重置检查 - 核心功能
+        // 每日重置检查 - 修复空值问题
         // ============================================================
         async function checkDailyReset() {
             if (!currentUser) return;
@@ -991,29 +996,44 @@
             const today = DateUtils.getTodayCN();
             const lastDate = currentUser.dailyScoreDate || '';
             
+            // ⭐ 关键修复：如果 lastDate 为空，设置为今天但不重置
+            if (!lastDate) {
+                console.log(`⚠️ 用户 ${currentUser.name} 没有日期记录，设置为今天但不重置`);
+                currentUser.dailyScoreDate = today;
+                setStorage('currentUser', currentUser);
+                return;
+            }
+            
+            // 只有日期不同时才重置
             if (lastDate !== today) {
                 isResetting = true;
-                console.log(`🔄 北京时间 ${DateUtils.getTimeCN()} 检测到新的一天 (${today})，重置用户 ${currentUser.name} 的每日数据`);
+                console.log(`🔄 检测到新的一天 (${today})，重置用户 ${currentUser.name} 的每日数据 (上次记录: ${lastDate})`);
                 
                 try {
+                    // 重置今日积分
                     currentUser.todayWarmup = 0;
                     currentUser.todayRank = 0;
                     currentUser.todayChallenge = 0;
                     currentUser.todayTotal = 0;
                     currentUser.dailyScoreDate = today;
+                    
+                    // 重置挑战赛使用次数
                     currentUser.challengeUsed = 0;
                     currentUser.challengeDate = today;
                     
+                    // 重置排位赛次数（优先从云端同步）
                     const rankData = await syncRankDailyFromCloud(currentUser.name);
                     if (rankData) {
                         currentUser.rankDaily = rankData;
                         currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
                     } else {
+                        // 云端同步失败，本地重置
                         currentUser.rankDaily = { date: today, used: 0 };
                         currentUser.rankRemain = 3;
                         setRankDailyCache(currentUser.name, currentUser.rankDaily);
                     }
                     
+                    // 保存到云端
                     try {
                         await saveUserToCloud(currentUser);
                         console.log('✅ 每日数据重置并保存成功');
@@ -1137,26 +1157,23 @@
         }
 
         // ============================================================
-        // 主界面更新
+        // 主界面更新 - 修复登录时误重置问题
         // ============================================================
         async function updateMainUI() {
             if (!currentUser) return;
             
-            await checkDailyReset();
-            
             var today = DateUtils.getTodayCN();
-
-            if (currentUser.dailyScoreDate !== today) {
-                currentUser.todayWarmup = 0;
-                currentUser.todayRank = 0;
-                currentUser.todayChallenge = 0;
-                currentUser.todayTotal = 0;
+            
+            // ⭐ 修复：只检查日期是否不同，不在这里执行重置
+            // 重置只在 checkDailyReset 中执行，且需要满足条件
+            if (currentUser.dailyScoreDate && currentUser.dailyScoreDate !== today) {
+                await checkDailyReset();
+            } else if (!currentUser.dailyScoreDate) {
+                // 没有日期记录，设置为今天
                 currentUser.dailyScoreDate = today;
-                currentUser.challengeUsed = 0;
-                currentUser.challengeDate = today;
-                await syncRankDailyFromCloud(currentUser.name);
                 setStorage('currentUser', currentUser);
             } else {
+                // 日期相同，只更新排位赛数据
                 var rankData = getRankDailyCache(currentUser.name);
                 if (!rankData || rankData.date !== today) {
                     await syncRankDailyFromCloud(currentUser.name);
@@ -1166,6 +1183,7 @@
                 }
             }
 
+            // 更新UI显示
             document.getElementById('mainUserName').textContent = currentUser.name;
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = currentUser.totalScore || 0;
@@ -1939,7 +1957,7 @@
         }
 
         // ============================================================
-        // 题库管理 (管理员) - 修复新增后刷新问题
+        // 题库管理 (管理员)
         // ============================================================
         let currentQuestionMode = 'warmup';
         let questionListData = [];
@@ -2068,7 +2086,6 @@
                 if (data.error) throw new Error(data.error);
                 alert(id ? '✅ 题目已更新' : '✅ 题目已添加');
                 closeQuestionModal();
-                // 重新加载当前模式的题库
                 await loadQuestions(currentQuestionMode);
                 hideLoading();
             } catch (e) {
@@ -2101,7 +2118,6 @@
             const defaultQuestions = getDefaultQuiz(mode);
             try {
                 showLoading();
-                // 先删除该模式所有题目
                 const respList = await fetch(API_BASE + '/questions?mode=' + mode + '&adminKey=' + ADMIN_PWD);
                 const list = await respList.json();
                 if (Array.isArray(list)) {
@@ -2109,7 +2125,6 @@
                         await fetch(API_BASE + '/questions?id=' + q.id + '&adminKey=' + ADMIN_PWD, { method: 'DELETE' });
                     }
                 }
-                // 添加默认题目
                 for (const q of defaultQuestions) {
                     const payload = {
                         mode: mode,
@@ -2146,7 +2161,6 @@
                 showPage('adminPage');
                 loadAdminConfig();
                 renderAdminData();
-                // 默认加载热身赛题库
                 loadQuestions('warmup');
             } else {
                 alert('密码错误，请重试');
@@ -2269,8 +2283,10 @@
                     currentUser = normalizeUser(savedUser);
                     var today = DateUtils.getTodayCN();
 
+                    // 检查并重置
                     await checkDailyReset();
 
+                    // 获取排位赛数据
                     var rankData = getRankDailyCache(currentUser.name);
                     if (!rankData || rankData.date !== today) {
                         await syncRankDailyFromCloud(currentUser.name);
@@ -2299,7 +2315,7 @@
             setInterval(async function() {
                 if (currentUser) {
                     const today = DateUtils.getTodayCN();
-                    if (currentUser.dailyScoreDate !== today) {
+                    if (currentUser.dailyScoreDate && currentUser.dailyScoreDate !== today) {
                         await checkDailyReset();
                         updateMainUI();
                     }
