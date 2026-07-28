@@ -25,7 +25,18 @@ export async function onRequest(context) {
         const userId = user.id;
         const today = userData.dailyScoreDate || new Date().toISOString().split('T')[0];
 
-        // 2. 更新 users 表
+        // ⭐ 修复：计算总积分
+        let totalScore = userData.totalScore || 0;
+        if (totalScore === 0) {
+            const warmupScore = userData.warmupScore || 0;
+            const rankScore = userData.rankScore || 0;
+            const challengeScore = userData.challengeScore || 0;
+            totalScore = warmupScore + rankScore + challengeScore;
+        }
+
+        // 2. 更新 users 表 - 增加 rank_daily 字段更新
+        const rankDailyJson = JSON.stringify(userData.rankDaily || { date: today, used: 0 });
+        
         await db.prepare(`
             UPDATE users SET
                 unit = ?,
@@ -41,6 +52,7 @@ export async function onRequest(context) {
                 totalScore = ?,
                 challengeUsed = ?,
                 challengeDate = ?,
+                rank_daily = ?,
                 version = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE name = ?
@@ -55,15 +67,15 @@ export async function onRequest(context) {
             userData.todayChallenge || 0,
             userData.todayTotal || 0,
             today,
-            userData.totalScore || 0,
+            totalScore,
             userData.challengeUsed || 0,
             userData.challengeDate || '',
+            rankDailyJson,
             (userData.version || 1) + 1,
             name
         ).run();
 
-        // 3. ⭐ 关键：写入 daily_score_history 表
-        // 如果当天有积分变化，插入或更新历史记录
+        // 3. 写入 daily_score_history 表
         const dailyScore = userData.todayTotal || 0;
         await db.prepare(`
             INSERT INTO daily_score_history (user_id, date, daily_score)
