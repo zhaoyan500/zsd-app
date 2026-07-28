@@ -1,4 +1,6 @@
 // /functions/api/sync-rank.js
+import { getBeijingDate } from './_utils.js';
+
 export async function onRequest(context) {
     const { request, env } = context;
     const headers = {
@@ -19,12 +21,9 @@ export async function onRequest(context) {
         }
 
         const db = env.D1_DB;
-        const today = new Date().toISOString().split('T')[0];
+        const today = getBeijingDate();
 
-        const user = await db.prepare(`
-            SELECT id FROM users WHERE name = ?
-        `).bind(name).first();
-
+        const user = await db.prepare(`SELECT id FROM users WHERE name = ?`).bind(name).first();
         if (!user) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
@@ -45,8 +44,8 @@ export async function onRequest(context) {
 
         return new Response(JSON.stringify({
             success: true,
-            rankDaily: { date: today, used: used },
-            remain: remain
+            rankDaily: { date: today, used },
+            remain
         }), { headers });
 
     } catch (err) {

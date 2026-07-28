@@ -1,4 +1,6 @@
 // /functions/api/save.js
+import { getBeijingDate } from './_utils.js';
+
 export async function onRequest(context) {
     const { request, env } = context;
     const headers = {
@@ -15,7 +17,7 @@ export async function onRequest(context) {
         }
 
         const db = env.D1_DB;
-        const today = new Date().toISOString().split('T')[0];
+        const today = getBeijingDate();
 
         // 1. 获取用户现有数据
         const existingUser = await db.prepare(`
@@ -30,24 +32,21 @@ export async function onRequest(context) {
         const userId = existingUser.id;
         const dailyScoreDate = userData.dailyScoreDate || today;
 
-        // 接收前端传入的各模式最高分
         const incomingWarmup = userData.warmupScore || 0;
         const incomingRank = userData.rankScore || 0;
         const incomingChallenge = userData.challengeScore || 0;
 
-        // 取历史最高（与数据库现有值比较）
         const newWarmupScore = Math.max(existingUser.warmup_score || 0, incomingWarmup);
         const newRankScore = Math.max(existingUser.rank_score || 0, incomingRank);
         const newChallengeScore = Math.max(existingUser.challenge_score || 0, incomingChallenge);
 
-        // 总积分 = 三项历史最高分之和
         const newTotalScore = newWarmupScore + newRankScore + newChallengeScore;
 
         console.log(`📊 保存用户 ${name}: 总积分=${newTotalScore} (热身=${newWarmupScore}, 排位=${newRankScore}, 挑战=${newChallengeScore})`);
 
-        const rankDailyJson = JSON.stringify(userData.rankDaily || { date: dailyScoreDate, used: 0 });
+        // ⭐ 不再更新 rank_daily 字段，该字段已废弃
+        // 只更新 users 表，排位赛数据单独由 rank_daily 表管理
 
-        // 2. 执行更新
         const updateResult = await db.prepare(`
             UPDATE users SET
                 unit = ?,
@@ -63,7 +62,6 @@ export async function onRequest(context) {
                 total_score = ?,
                 challenge_used = ?,
                 challenge_date = ?,
-                rank_daily = ?,
                 version = ?,
                 updated_at = datetime('now')
             WHERE name = ?
@@ -81,13 +79,11 @@ export async function onRequest(context) {
             newTotalScore,
             userData.challengeUsed || 0,
             userData.challengeDate || '',
-            rankDailyJson,
             (userData.version || 1) + 1,
             name
         ).run();
 
-        // 检查更新是否影响了行（若影响行数为0，说明WHERE条件未匹配，可能是用户被删除）
-        if (updateResult.meta.changes === 0) {
+        if (updateResult.meta && updateResult.meta.changes === 0) {
             throw new Error('更新失败，用户可能已被删除或不存在');
         }
 

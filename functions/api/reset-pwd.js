@@ -1,4 +1,6 @@
 // /functions/api/reset-pwd.js
+import { generateSalt, hashPassword } from './_utils.js';
+
 export async function onRequest(context) {
     const { request, env } = context;
     const headers = {
@@ -20,9 +22,14 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
 
+        // 生成新盐并哈希
+        const salt = generateSalt();
+        const hashedPwd = await hashPassword(newPwd, salt);
+        const storedPwd = `${salt}:${hashedPwd}`;
+
         const result = await db.prepare(`
             UPDATE users SET pwd = ?, version = version + 1, updated_at = datetime('now') WHERE name = ?
-        `).bind(newPwd, name).run();
+        `).bind(storedPwd, name).run();
 
         if (result.changes === 0) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });

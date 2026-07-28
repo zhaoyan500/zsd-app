@@ -1,4 +1,6 @@
 // /functions/api/login.js
+import { getBeijingDate, verifyPassword } from './_utils.js';
+
 export async function onRequest(context) {
     const { request, env } = context;
     const headers = {
@@ -40,12 +42,13 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
 
-        if (user.pwd !== pwd) {
+        // 验证密码（哈希比对）
+        const isValid = await verifyPassword(pwd, user.pwd);
+        if (!isValid) {
             return new Response(JSON.stringify({ error: '密码错误' }), { status: 401, headers });
         }
 
         // ---------- 数据一致性修复 ----------
-        // 1. 强制按三项最高分之和重算 total_score（修复历史错误）
         const calculatedTotal = (user.warmup_score || 0) + (user.rank_score || 0) + (user.challenge_score || 0);
         if (calculatedTotal !== user.total_score) {
             console.log(`🔧 修复用户 ${name} 的 total_score: ${user.total_score} -> ${calculatedTotal}`);
@@ -53,13 +56,8 @@ export async function onRequest(context) {
             user.total_score = calculatedTotal;
         }
 
-        // 2. 如果历史分数全为0，但本地缓存中可能有数据（通过前端传入），尝试从请求体中的本地数据恢复（仅当请求体包含localData）
-        // 此功能由前端在登录时携带本地缓存数据来实现（见下文前端修改）
-        // 我们在此不自动恢复，交由前端逻辑控制，避免意外覆盖。
+        const today = getBeijingDate();
 
-        const today = new Date().toISOString().split('T')[0];
-
-        // 处理每日日期重置（今日数据清零）
         if (!user.daily_score_date) {
             user.daily_score_date = today;
             await db.prepare(`UPDATE users SET daily_score_date = ? WHERE id = ?`).bind(today, user.id).run();
@@ -113,7 +111,6 @@ export async function onRequest(context) {
 
         delete user.pwd;
 
-        // 返回数据（同时包含驼峰命名兼容）
         return new Response(JSON.stringify({
             success: true,
             user: {
@@ -137,7 +134,6 @@ export async function onRequest(context) {
                 updated_at: user.updated_at,
                 rank_remain: rankRemain,
                 rankDaily: { date: today, used: used },
-                // 驼峰
                 totalScore: user.total_score || 0,
                 dailyScoreDate: user.daily_score_date || today,
                 warmupScore: user.warmup_score || 0,

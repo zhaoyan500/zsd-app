@@ -20,7 +20,6 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
 
-        // 使用事务保证原子性
         const statements = [
             db.prepare('DELETE FROM quiz_history'),
             db.prepare('DELETE FROM rank_daily'),
