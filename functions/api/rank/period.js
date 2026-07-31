@@ -42,7 +42,7 @@ export async function onRequest(context) {
             }), { status: 500, headers });
         }
 
-        // 修改：取周期内每日积分（daily_score）的最高值，而非累计
+        // 关键修改：将 SUM 改为 MAX，取周期内每日积分的最高值，而非累计总和
         const rows = await db.prepare(`
             SELECT 
                 u.id, 
