@@ -42,12 +42,13 @@ export async function onRequest(context) {
             }), { status: 500, headers });
         }
 
+        // 修改：取周期内每日积分（daily_score）的最高值，而非累计
         const rows = await db.prepare(`
             SELECT 
                 u.id, 
                 u.name, 
                 u.unit,
-                COALESCE(SUM(dh.daily_score), 0) AS period_score
+                COALESCE(MAX(dh.daily_score), 0) AS period_score
             FROM users u
             LEFT JOIN daily_score_history dh ON u.id = dh.user_id AND dh.date >= ?
             GROUP BY u.id, u.name, u.unit
