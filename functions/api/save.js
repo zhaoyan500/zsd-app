@@ -37,15 +37,15 @@ export async function onRequest(context) {
         const newRankScore = Math.max(existingUser.rank_score || 0, userData.rankScore || 0);
         const newChallengeScore = Math.max(existingUser.challenge_score || 0, userData.challengeScore || 0);
 
-        // 3. 计算新的当日积分（三项今日最高分之和）
+        // 3. 计算新的当日积分（三项今日最高分之和，仅用于展示和记录）
         const newDailyScore = (userData.todayWarmup || 0) + (userData.todayRank || 0) + (userData.todayChallenge || 0);
-        const oldDailyScore = existingUser.daily_score || 0;
-        const delta = newDailyScore - oldDailyScore;
-        const newTotalScore = (existingUser.total_score || 0) + delta;
 
-        console.log(`📊 用户 ${name}: 旧dailyScore=${oldDailyScore}, 新dailyScore=${newDailyScore}, 增量=${delta}, 总积分=${newTotalScore}`);
+        // 4. 总积分 = 三项模式最高分之和（不再累计）
+        const newTotalScore = newWarmupScore + newRankScore + newChallengeScore;
 
-        // 4. 更新 users 表
+        console.log(`📊 用户 ${name}: 最高分 热身=${newWarmupScore}, 排位=${newRankScore}, 挑战=${newChallengeScore}, 总积分=${newTotalScore}`);
+
+        // 5. 更新 users 表
         await db.prepare(`
             UPDATE users SET
                 unit = ?,
@@ -82,14 +82,14 @@ export async function onRequest(context) {
             name
         ).run();
 
-        // 5. 写入 daily_score_history（记录每日最终值，覆盖更新）
+        // 6. 写入 daily_score_history（记录每日最终值，用于周/月榜）
         await db.prepare(`
             INSERT INTO daily_score_history (user_id, date, daily_score)
             VALUES (?, ?, ?)
             ON CONFLICT(user_id, date) DO UPDATE SET daily_score = excluded.daily_score
         `).bind(userId, dailyScoreDate, newDailyScore).run();
 
-        // 6. 返回更新后的用户数据
+        // 7. 返回更新后的用户数据
         const updatedUser = await db.prepare(`
             SELECT 
                 id, name, unit, 

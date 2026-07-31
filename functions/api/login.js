@@ -64,29 +64,12 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '密码错误' }), { status: 401, headers });
         }
 
-        // ---------- 数据修复：总积分 = 所有历史每日积分之和 ----------
-        const historySum = await db.prepare(`
-            SELECT COALESCE(SUM(daily_score), 0) as total FROM daily_score_history WHERE user_id = ?
-        `).bind(user.id).first();
-
-        const calculatedTotal = historySum ? historySum.total : 0;
-
-        if (calculatedTotal > 0) {
-            if (calculatedTotal !== user.total_score) {
-                console.log(`🔧 修复用户 ${name} 的总积分: ${user.total_score} -> ${calculatedTotal}`);
-                await db.prepare(`UPDATE users SET total_score = ? WHERE id = ?`).bind(calculatedTotal, user.id).run();
-                user.total_score = calculatedTotal;
-            }
-        } else {
-            // 没有历史记录，但用户可能已有旧数据（迁移前），用三项最高分之和初始化
-            if (user.total_score === 0) {
-                const initTotal = (user.warmup_score || 0) + (user.rank_score || 0) + (user.challenge_score || 0);
-                if (initTotal > 0) {
-                    console.log(`🔧 初始化用户 ${name} 的总积分为 ${initTotal}`);
-                    await db.prepare(`UPDATE users SET total_score = ? WHERE id = ?`).bind(initTotal, user.id).run();
-                    user.total_score = initTotal;
-                }
-            }
+        // ---------- 总积分修复：确保总积分 = 三项最高分之和 ----------
+        const calculatedTotal = user.warmup_score + user.rank_score + user.challenge_score;
+        if (calculatedTotal !== user.total_score) {
+            console.log(`🔧 修复用户 ${name} 的总积分: ${user.total_score} -> ${calculatedTotal}`);
+            await db.prepare(`UPDATE users SET total_score = ? WHERE id = ?`).bind(calculatedTotal, user.id).run();
+            user.total_score = calculatedTotal;
         }
 
         const today = getBeijingDate();
