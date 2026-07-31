@@ -11,38 +11,36 @@ export async function onRequest(context) {
         const period = url.searchParams.get('period') || 'week'; // 'week' or 'month'
         const db = env.D1_DB;
 
-        // 使用中国时区 (UTC+8) 计算本周/本月起始日期
+        // 计算本周/本月起始日期（北京时间）
         const now = new Date();
-        // 转为北京时间 (UTC+8)
         const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
         const year = beijingTime.getUTCFullYear();
         const month = beijingTime.getUTCMonth();
         const date = beijingTime.getUTCDate();
-        const day = beijingTime.getUTCDay(); // 0=周日
+        const day = beijingTime.getUTCDay();
 
         let startDate;
         if (period === 'week') {
-            // 周一为一周的开始 (周一=1, 周日=0 => 周日视为7)
-            const diff = (day === 0 ? 7 : day) - 1; // 距离周一的天数
+            const diff = (day === 0 ? 7 : day) - 1;
             const monday = new Date(Date.UTC(year, month, date - diff));
             startDate = monday.toISOString().split('T')[0];
-        } else { // month
+        } else {
             const firstDay = new Date(Date.UTC(year, month, 1));
             startDate = firstDay.toISOString().split('T')[0];
         }
 
-        // 检查表是否存在
+        // 检查表存在性
         const tableCheck = await db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='daily_score_history'`).first();
         if (!tableCheck) {
             return new Response(JSON.stringify({
                 error: '数据库表缺失',
-                period: period,
-                startDate: startDate,
+                period,
+                startDate,
                 ranking: []
             }), { status: 500, headers });
         }
 
-        // 关键修改：将 SUM 改为 MAX，取周期内每日积分的最高值，而非累计总和
+        // 使用 MAX 取周期内单日最高积分，而非 SUM 累计
         const rows = await db.prepare(`
             SELECT 
                 u.id, 
@@ -56,12 +54,10 @@ export async function onRequest(context) {
             ORDER BY period_score DESC
         `).bind(startDate).all();
 
-        const results = rows.results || [];
-
         return new Response(JSON.stringify({
-            period: period,
-            startDate: startDate,
-            ranking: results
+            period,
+            startDate,
+            ranking: rows.results || []
         }), { headers });
 
     } catch (err) {
