@@ -4,12 +4,16 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "D1_DB"
 database_name = "zsd-db"
-database_id = "your-database-id-here"
+database_id = "your-database-id-here"   # 替换为您的实际数据库 ID
 
+# 数据库迁移（按顺序执行）
 [[migrations]]
 tag = "v1"
 sql = """
+-- 添加 version 字段（如果已存在则忽略）
 ALTER TABLE users ADD COLUMN version INTEGER DEFAULT 1;
+
+-- 创建索引优化查询
 CREATE INDEX IF NOT EXISTS idx_rank_daily_user_date ON rank_daily(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_quiz_history_user_mode ON quiz_history(user_id, mode);
 """
@@ -17,33 +21,6 @@ CREATE INDEX IF NOT EXISTS idx_quiz_history_user_mode ON quiz_history(user_id, m
 [[migrations]]
 tag = "v2"
 sql = """
-ALTER TABLE users ADD COLUMN daily_score INTEGER DEFAULT 0;
-ALTER TABLE users ADD COLUMN daily_score_date TEXT DEFAULT '';
-ALTER TABLE users RENAME COLUMN total_score TO total_score_old;
-ALTER TABLE users ADD COLUMN total_score INTEGER DEFAULT 0;
-UPDATE users SET total_score = total_score_old;
-CREATE INDEX IF NOT EXISTS idx_users_daily_score ON users(daily_score_date);
-"""
-
-[[migrations]]
-tag = "v3"
-sql = """
-ALTER TABLE users ADD COLUMN today_warmup_score INTEGER DEFAULT 0;
-ALTER TABLE users ADD COLUMN today_rank_score INTEGER DEFAULT 0;
-ALTER TABLE users ADD COLUMN today_challenge_score INTEGER DEFAULT 0;
-UPDATE users SET today_warmup_score = 0, today_rank_score = 0, today_challenge_score = 0;
-"""
-
-[[migrations]]
-tag = "v4"
-sql = """
-CREATE TABLE IF NOT EXISTS daily_score_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    date TEXT NOT NULL,
-    daily_score INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, date)
-);
-CREATE INDEX IF NOT EXISTS idx_daily_score_history_user_date ON daily_score_history(user_id, date);
+-- 添加每日奖励日期字段
+ALTER TABLE users ADD COLUMN reward_date TEXT DEFAULT '';
 """
