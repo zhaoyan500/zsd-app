@@ -343,9 +343,9 @@
         <div class="max-w-md mx-auto pt-3 p-5">
             <div class="bg-white rounded-xl shadow-md p-5">
                 <h2 class="text-xl font-bold text-primary text-center mb-4">🏅 排行榜</h2>
+                <!-- 修改点1：移除“总榜”选项卡，默认选中“战队榜” -->
                 <div class="flex flex-wrap gap-2 mb-4 justify-center">
-                    <span class="rank-tab active" data-rank="total" onclick="setRankFilter('total')">总榜</span>
-                    <span class="rank-tab" data-rank="unit" onclick="setRankFilter('unit')">战队榜</span>
+                    <span class="rank-tab active" data-rank="unit" onclick="setRankFilter('unit')">战队榜</span>
                     <span class="rank-tab" data-rank="month" onclick="setRankFilter('month')">月榜</span>
                     <span class="rank-tab" data-rank="week" onclick="setRankFilter('week')">周榜</span>
                 </div>
@@ -443,7 +443,6 @@
                     <button onclick="loadQuestions('challenge')" class="px-3 py-1 bg-primary text-white rounded text-sm">挑战赛</button>
                     <button onclick="showAddQuestion()" class="px-3 py-1 bg-success text-white rounded text-sm">➕ 添加题目</button>
                     <button onclick="syncDefaultQuiz()" class="px-3 py-1 bg-warning text-white rounded text-sm">🔄 同步默认题库</button>
-                    <!-- 新增批量导入按钮 -->
                     <button onclick="showBatchImport()" class="px-3 py-1 bg-success text-white rounded text-sm">📥 批量导入</button>
                 </div>
                 <div id="questionList" class="max-h-[40vh] overflow-y-auto space-y-2 text-sm">
@@ -507,7 +506,7 @@
         </div>
     </div>
 
-    <!-- 新增：批量导入模态框 -->
+    <!-- 批量导入模态框 -->
     <div id="batchImportModal" class="modal-box hidden">
         <div class="modal-inner max-w-lg">
             <h3 class="text-lg font-bold text-primary mb-3">📥 批量导入题目</h3>
@@ -575,7 +574,8 @@
         let timeLeft = 20;
         let isAnswering = false;
         let quizQuestions = [];
-        let rankFilter = 'total';
+        // 修改点2：rankFilter 默认改为 'unit'
+        let rankFilter = 'unit';
         let audioCtx = null;
         var cachedUsers = [];
         let isResetting = false;
@@ -1837,11 +1837,8 @@
                 teamTotal.classList.add('hidden');
             } else {
                 sel.classList.add('hidden');
-                if (type === 'total') {
-                    teamTotal.classList.remove('hidden');
-                } else {
-                    teamTotal.classList.add('hidden');
-                }
+                // 月榜和周榜不显示战队总榜
+                teamTotal.classList.add('hidden');
             }
             renderRank();
         }
@@ -1914,54 +1911,8 @@
                 cachedUsers = list;
                 cachedTeamRanking = teamRanking;
 
-                if (rankFilter === 'total') {
-                    var sorted = list.slice().sort(function(a, b) {
-                        return (b.totalScore || 0) - (a.totalScore || 0);
-                    });
-                    var html = '<div class="rank-section-title">🏆 个人排行</div>';
-                    if (sorted.length === 0) {
-                        html += '<p class="text-center text-gray-400 py-4">暂无用户数据</p>';
-                    } else {
-                        for (var i = 0; i < sorted.length && i < 50; i++) {
-                            var u = sorted[i];
-                            var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
-                            var isCurrentUser = currentUser && u.name === currentUser.name;
-                            html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
-                                (isCurrentUser ? ' border-2 border-primary' : '') + '">' +
-                                '<div><span class="font-bold text-primary">' + medal + '</span>' +
-                                '<span class="ml-2 font-medium">' + u.name + '</span>' +
-                                '<span class="text-gray-400 text-xs ml-1">(' + (u.unit || '未分配') + ')</span>' +
-                                (isCurrentUser ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
-                                '</div>' +
-                                '<span class="font-bold text-success">' + (u.totalScore || 0) + '分</span>' +
-                                '</div>';
-                        }
-                    }
-                    rankBox.innerHTML = html;
-
-                    var teamHtml = '<div class="rank-section-title">🏢 战队排行</div>';
-                    if (teamRanking.length === 0) {
-                        teamHtml += '<p class="text-center text-gray-400 py-2">暂无战队数据</p>';
-                    } else {
-                        for (var m = 0; m < teamRanking.length && m < 20; m++) {
-                            var team = teamRanking[m];
-                            var medal2 = m === 0 ? '🥇' : m === 1 ? '🥈' : m === 2 ? '🥉' : (m + 1);
-                            var isMyTeam = currentUser && team.unit === currentUser.unit;
-                            teamHtml += '<div class="flex justify-between items-center p-2 bg-grayLight rounded-lg' +
-                                (isMyTeam ? ' border-2 border-primary' : '') + '">' +
-                                '<div><span class="font-bold text-primary">' + medal2 + '</span>' +
-                                '<span class="ml-2 font-medium">' + team.unit + '</span>' +
-                                '<span class="text-gray-400 text-xs ml-1">(' + team.memberCount + '人)</span>' +
-                                (isMyTeam ? '<span class="ml-2 text-primary text-xs">👈 你的战队</span>' : '') +
-                                '</div>' +
-                                '<span class="font-bold text-success">' + team.totalScore + '分</span>' +
-                                '</div>';
-                        }
-                    }
-                    teamTotalBox.innerHTML = teamHtml;
-                    teamTotalRank.classList.remove('hidden');
-
-                } else if (rankFilter === 'unit') {
+                // 由于已移除总榜，这里只处理 unit、month、week
+                if (rankFilter === 'unit') {
                     teamTotalRank.classList.add('hidden');
                     populateTeamSelector();
                     var select = document.getElementById('selectedTeam');
@@ -1976,32 +1927,33 @@
                     for (var n = 0; n < members.length; n++) {
                         teamTotal += (members[n].totalScore || 0);
                     }
-                    var sorted2 = members.slice().sort(function(a, b) {
+                    var sorted = members.slice().sort(function(a, b) {
                         return (b.totalScore || 0) - (a.totalScore || 0);
                     });
-                    var html2 = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>' +
+                    var html = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>' +
                         '<div class="text-sm text-gray-500 mb-3">战队积分：<b class="text-primary">' +
                         teamTotal + '分</b> | 成员：' + members.length + '人</div>';
-                    if (sorted2.length === 0) {
-                        html2 += '<p class="text-center text-gray-400 py-4">该战队暂无成员</p>';
+                    if (sorted.length === 0) {
+                        html += '<p class="text-center text-gray-400 py-4">该战队暂无成员</p>';
                     } else {
-                        for (var p = 0; p < sorted2.length; p++) {
-                            var u2 = sorted2[p];
-                            var medal3 = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
-                            var isMe = currentUser && u2.name === currentUser.name;
-                            html2 += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
+                        for (var p = 0; p < sorted.length; p++) {
+                            var u = sorted[p];
+                            var medal = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
+                            var isMe = currentUser && u.name === currentUser.name;
+                            html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
                                 (isMe ? ' border-2 border-primary' : '') + '">' +
-                                '<div><span class="font-bold text-primary">' + medal3 + '</span>' +
-                                '<span class="ml-2 font-medium">' + u2.name + '</span>' +
+                                '<div><span class="font-bold text-primary">' + medal + '</span>' +
+                                '<span class="ml-2 font-medium">' + u.name + '</span>' +
                                 (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
                                 '</div>' +
-                                '<span class="font-bold text-success">' + (u2.totalScore || 0) + '分</span>' +
+                                '<span class="font-bold text-success">' + (u.totalScore || 0) + '分</span>' +
                                 '</div>';
                         }
                     }
-                    rankBox.innerHTML = html2;
+                    rankBox.innerHTML = html;
 
                 } else {
+                    // month 或 week
                     teamTotalRank.classList.add('hidden');
                     var period = rankFilter === 'week' ? 'week' : 'month';
                     try {
@@ -2022,11 +1974,11 @@
                             for (var q = 0; q < top10.length; q++) {
                                 var u = top10[q];
                                 var score = Number(u.period_score) || 0;
-                                var medal4 = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
+                                var medal = q === 0 ? '🥇' : q === 1 ? '🥈' : q === 2 ? '🥉' : (q + 1);
                                 var isCurrent = currentUser && u.name === currentUser.name;
                                 html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
                                     (isCurrent ? ' border-2 border-primary' : '') + '">' +
-                                    '<div><span class="font-bold text-primary">' + medal4 + '</span>' +
+                                    '<div><span class="font-bold text-primary">' + medal + '</span>' +
                                     '<span class="ml-2 font-medium">' + u.name + '</span>' +
                                     '<span class="text-gray-400 text-xs ml-1">(' + (u.unit || '未分配') + ')</span>' +
                                     (isCurrent ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
@@ -2037,7 +1989,7 @@
                         }
                         rankBox.innerHTML = html;
                     } catch (err) {
-                        console.error('❌ 周/月榜加载错误:', err);
+                        console.error('❌ 周期榜加载错误:', err);
                         rankBox.innerHTML = '<p class="text-center text-red-500 py-4">❌ 加载失败</p>';
                     }
                 }
