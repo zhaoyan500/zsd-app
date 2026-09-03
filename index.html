@@ -68,7 +68,6 @@
         .clear-search-btn:hover { background: #d0d0d0; }
         .user-item-actions { display: flex; gap: 6px; align-items: center; }
         .user-item-actions .reset-pwd-btn { font-size: 11px; padding: 2px 8px; }
-        /* [新增] 删除按钮红色样式 */
         .delete-user-btn { background: #dc3545; border: none; border-radius: 4px; padding: 2px 10px; font-size: 12px; cursor: pointer; color: white; transition: 0.2s; }
         .delete-user-btn:hover { background: #c82333; }
         #globalHeader { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #c41e3a 0%, #8b1a2b 100%); padding: 12px 16px 10px 16px; text-align: center; box-shadow: 0 2px 16px rgba(196,30,58,0.4); border-bottom: 2px solid #feca57; }
@@ -92,6 +91,7 @@
         .rank-remain-badge.green { background: #d4edda; color: #155724; }
         .rank-remain-badge.yellow { background: #fff3cd; color: #856404; }
         .rank-remain-badge.red { background: #f8d7da; color: #721c24; }
+        .batch-textarea { font-family: 'Courier New', monospace; font-size: 13px; }
         @media (max-width: 480px) {
             #globalHeader .title-line1 { font-size: 1.3rem; letter-spacing: 2px; }
             #globalHeader .title-line2 { font-size: 0.9rem; letter-spacing: 6px; }
@@ -443,6 +443,8 @@
                     <button onclick="loadQuestions('challenge')" class="px-3 py-1 bg-primary text-white rounded text-sm">挑战赛</button>
                     <button onclick="showAddQuestion()" class="px-3 py-1 bg-success text-white rounded text-sm">➕ 添加题目</button>
                     <button onclick="syncDefaultQuiz()" class="px-3 py-1 bg-warning text-white rounded text-sm">🔄 同步默认题库</button>
+                    <!-- 新增批量导入按钮 -->
+                    <button onclick="showBatchImport()" class="px-3 py-1 bg-success text-white rounded text-sm">📥 批量导入</button>
                 </div>
                 <div id="questionList" class="max-h-[40vh] overflow-y-auto space-y-2 text-sm">
                     <p class="text-gray-400 text-center py-4">请选择模式加载题库</p>
@@ -501,6 +503,39 @@
             <div class="flex gap-3 mt-4 justify-end">
                 <button onclick="closeQuestionModal()" class="px-4 py-2 border rounded">取消</button>
                 <button onclick="saveQuestion()" class="px-4 py-2 bg-primary text-white rounded">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增：批量导入模态框 -->
+    <div id="batchImportModal" class="modal-box hidden">
+        <div class="modal-inner max-w-lg">
+            <h3 class="text-lg font-bold text-primary mb-3">📥 批量导入题目</h3>
+            <div class="text-left space-y-3">
+                <div>
+                    <label class="block text-sm font-medium">所属模式</label>
+                    <select id="batchMode" class="w-full border rounded px-3 py-2">
+                        <option value="warmup">热身赛</option>
+                        <option value="ranked">排位赛</option>
+                        <option value="challenge">挑战赛</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium">粘贴 JSON 数据</label>
+                    <textarea id="batchData" rows="10" class="w-full border rounded px-3 py-2 font-mono text-sm batch-textarea" placeholder='[
+  {"question":"题目1","option_a":"A选项","option_b":"B选项","option_c":"C选项","option_d":"D选项","correct":"A"},
+  {"question":"题目2","option_a":"A选项","option_b":"B选项","option_c":"C选项","option_d":"D选项","correct":"B"}
+]'></textarea>
+                    <p class="text-xs text-gray-400 mt-1">每道题一个 JSON 对象，数组格式。必填字段：question, option_a, option_b, option_c, option_d, correct</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium">或选择 JSON 文件</label>
+                    <input type="file" id="batchFile" accept=".json" class="w-full" onchange="readBatchFile(this)">
+                </div>
+            </div>
+            <div class="flex gap-3 mt-4 justify-end">
+                <button onclick="closeBatchImport()" class="px-4 py-2 border rounded">取消</button>
+                <button onclick="importBatch()" class="px-4 py-2 bg-primary text-white rounded">导入</button>
             </div>
         </div>
     </div>
@@ -2221,6 +2256,87 @@
         }
 
         // ============================================================
+        // 批量导入题库
+        // ============================================================
+        function showBatchImport() {
+            document.getElementById('batchImportModal').classList.remove('hidden');
+            document.getElementById('batchMode').value = currentQuestionMode;
+            document.getElementById('batchData').value = '';
+            document.getElementById('batchFile').value = '';
+        }
+
+        function closeBatchImport() {
+            document.getElementById('batchImportModal').classList.add('hidden');
+        }
+
+        function readBatchFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('batchData').value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
+        async function importBatch() {
+            const mode = document.getElementById('batchMode').value;
+            const rawData = document.getElementById('batchData').value.trim();
+            if (!rawData) {
+                alert('请粘贴 JSON 数据或选择文件');
+                return;
+            }
+
+            let questions;
+            try {
+                questions = JSON.parse(rawData);
+                if (!Array.isArray(questions)) throw new Error('数据必须为数组');
+            } catch (e) {
+                alert('JSON 格式错误：' + e.message);
+                return;
+            }
+
+            const payload = questions.map(q => ({
+                ...q,
+                mode: mode,
+                sort_order: q.sort_order || 0
+            }));
+
+            for (const q of payload) {
+                if (!q.question || !q.option_a || !q.option_b || !q.option_c || !q.option_d || !q.correct) {
+                    alert('存在不完整的题目，请检查所有字段');
+                    return;
+                }
+                if (!['A','B','C','D'].includes(q.correct.toUpperCase())) {
+                    alert('正确答案必须是 A/B/C/D');
+                    return;
+                }
+                q.correct = q.correct.toUpperCase();
+            }
+
+            showLoading();
+            try {
+                const resp = await fetch(API_BASE + '/questions/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        adminKey: ADMIN_PWD,
+                        questions: payload
+                    })
+                });
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+                alert(`✅ 成功导入 ${data.inserted} 道题目`);
+                closeBatchImport();
+                await loadQuestions(currentQuestionMode);
+            } catch (e) {
+                alert('导入失败：' + e.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // ============================================================
         // 管理员功能
         // ============================================================
         function adminLoginCheck() {
@@ -2236,7 +2352,7 @@
         }
 
         // ============================================================
-        // [修改] renderAdminData - 增加删除按钮
+        // 用户管理 - 渲染列表 (含删除按钮)
         // ============================================================
         async function renderAdminData() {
             try {
@@ -2262,7 +2378,6 @@
                             '分</span><span class="text-gray-400 ml-2">排位剩余: ' + remain + '次</span></div>' +
                             '<div class="user-item-actions">' +
                             '<button onclick="resetUserPassword(\'' + u.name + '\')" class="reset-pwd-btn">🔑 重置密码</button>' +
-                            // [新增] 删除按钮
                             '<button onclick="deleteUser(\'' + u.name + '\')" class="delete-user-btn">🗑️ 删除</button>' +
                             '</div>' +
                             '</div>';
@@ -2275,7 +2390,7 @@
         }
 
         // ============================================================
-        // [新增] 删除用户函数
+        // 删除用户
         // ============================================================
         async function deleteUser(name) {
             if (!confirm('⚠️ 确定要删除用户 "' + name + '" 及其所有数据（包括积分、排位记录等）吗？此操作不可恢复！')) {
@@ -2294,7 +2409,6 @@
                     alert('删除失败：' + result.error);
                 } else {
                     alert('✅ 用户 "' + name + '" 已成功删除');
-                    // 如果删除的是当前登录用户，则自动登出
                     if (currentUser && currentUser.name === name) {
                         localStorage.removeItem('currentUser');
                         currentUser = null;
@@ -2497,7 +2611,11 @@
         window.saveQuestion = saveQuestion;
         window.deleteQuestion = deleteQuestion;
         window.syncDefaultQuiz = syncDefaultQuiz;
-        window.deleteUser = deleteUser; // [新增] 暴露删除函数
+        window.deleteUser = deleteUser;
+        window.showBatchImport = showBatchImport;
+        window.closeBatchImport = closeBatchImport;
+        window.readBatchFile = readBatchFile;
+        window.importBatch = importBatch;
         window.API_BASE = API_BASE;
         window.checkDailyReset = checkDailyReset;
         window.startAutoResetTimer = startAutoResetTimer;
