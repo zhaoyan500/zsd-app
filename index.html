@@ -68,6 +68,9 @@
         .clear-search-btn:hover { background: #d0d0d0; }
         .user-item-actions { display: flex; gap: 6px; align-items: center; }
         .user-item-actions .reset-pwd-btn { font-size: 11px; padding: 2px 8px; }
+        /* [新增] 删除按钮红色样式 */
+        .delete-user-btn { background: #dc3545; border: none; border-radius: 4px; padding: 2px 10px; font-size: 12px; cursor: pointer; color: white; transition: 0.2s; }
+        .delete-user-btn:hover { background: #c82333; }
         #globalHeader { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #c41e3a 0%, #8b1a2b 100%); padding: 12px 16px 10px 16px; text-align: center; box-shadow: 0 2px 16px rgba(196,30,58,0.4); border-bottom: 2px solid #feca57; }
         #globalHeader .header-inner { max-width: 600px; margin: 0 auto; }
         #globalHeader .title-line1 { font-size: 1.7rem; font-weight: 900; color: #ffffff; letter-spacing: 3px; text-shadow: 0 2px 6px rgba(0,0,0,0.25); line-height: 1.3; }
@@ -210,7 +213,6 @@
                         <p class="text-xs text-gray-400" id="mainUserUnit">--</p>
                     </div>
                     <div class="text-right">
-                        <!-- 取消“总积分”标签，仅保留数字 -->
                         <p class="text-2xl font-bold text-primary" id="mainTotalScore">0</p>
                     </div>
                 </div>
@@ -220,7 +222,6 @@
                         <span id="rankBadge" class="rank-remain-badge green">可用</span>
                     </span>
                 </div>
-                <!-- 三个赛制今日最高，去掉“今日总积分” -->
                 <div class="flex gap-3 mt-2 text-xs text-gray-500 flex-wrap justify-around">
                     <span><span class="text-base">🔥</span> 热身: <b id="mainTodayWarmup">0</b></span>
                     <span><span class="text-base">⚔️</span> 排位: <b id="mainTodayRank">0</b></span>
@@ -652,14 +653,13 @@
         }
 
         // ============================================================
-        // 数据适配器 - 关键修复（移除后备计算，避免与排行榜不一致）
+        // 数据适配器
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
 
             console.log('📥 normalizeUser 原始数据:', JSON.stringify(user));
 
-            // 处理 rankDaily
             var rankDaily = user.rankDaily || null;
             if (!rankDaily && user.rank_daily) {
                 try {
@@ -671,7 +671,6 @@
                 validRankDaily = rankDaily;
             }
 
-            // 获取 daily_score_date
             var dailyScoreDate = user.dailyScoreDate || user.daily_score_date || '';
 
             if (!dailyScoreDate && validRankDaily && validRankDaily.date) {
@@ -684,18 +683,15 @@
 
             console.log('📥 dailyScoreDate 解析结果:', dailyScoreDate);
 
-            // 今日数据
             var todayWarmup = user.todayWarmup || user.today_warmup_score || user.todayWarmupScore || 0;
             var todayRank = user.todayRank || user.today_rank_score || user.todayRankScore || 0;
             var todayChallenge = user.todayChallenge || user.today_challenge_score || user.todayChallengeScore || 0;
             var todayTotal = user.todayTotal || user.daily_score || user.dailyScore || 0;
 
-            // 历史最高分
             var warmupScore = user.warmupScore || user.warmup_score || 0;
             var rankScore = user.rankScore || user.rank_score || 0;
             var challengeScore = user.challengeScore || user.challenge_score || 0;
 
-            // 总积分直接从数据库读取，不再使用后备计算
             var totalScore = user.totalScore || user.total_score || 0;
 
             console.log('📥 totalScore 解析: user.totalScore=' + user.totalScore + ', user.total_score=' + user.total_score +
@@ -972,7 +968,7 @@
         }
 
         // ============================================================
-        // 登录 - 关键修复：增加本地缓存恢复逻辑
+        // 登录
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
@@ -1016,7 +1012,7 @@
                     currentUser.totalScore = 0;
                 }
 
-                // ---------- 本地缓存恢复逻辑 ----------
+                // 本地缓存恢复逻辑（保留）
                 const localUser = getStorage('currentUser', null);
                 if (localUser && (localUser.warmupScore > 0 || localUser.rankScore > 0 || localUser.challengeScore > 0)) {
                     const dbWarmup = currentUser.warmupScore || 0;
@@ -1161,7 +1157,7 @@
         }
 
         // ============================================================
-        // 保存用户数据到云端（增强错误处理，抛出异常）
+        // 保存用户数据到云端
         // ============================================================
         async function saveUserToCloud(user) {
             if (!user || !user.name) {
@@ -1195,9 +1191,7 @@
 
                 if (result && result.error) {
                     console.error('保存API返回错误:', result.error);
-                    // 保存失败，但保留本地缓存，不覆盖
                     setStorage('currentUser', user);
-                    // 抛出错误以便上层捕获并提示用户
                     throw new Error(result.error);
                 }
 
@@ -1218,13 +1212,11 @@
                     return { success: true, user: result.user };
                 }
 
-                // 如果没有返回user，但也没有错误，视为成功（但数据未变）
                 setStorage('currentUser', user);
                 return { success: true, user: user };
             } catch (error) {
                 console.error('保存失败:', error);
                 setStorage('currentUser', user);
-                // 向上抛出错误，由上层处理（如弹窗提示）
                 throw error;
             }
         }
@@ -1279,7 +1271,6 @@
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = currentUser.totalScore || 0;
 
-            // 更新三个赛制的今日最高分（已移除"今日总积分"）
             document.getElementById('mainTodayWarmup').textContent = currentUser.todayWarmup || 0;
             document.getElementById('mainTodayRank').textContent = currentUser.todayRank || 0;
             document.getElementById('mainTodayChallenge').textContent = currentUser.todayChallenge || 0;
@@ -1616,7 +1607,7 @@
         }
 
         // ============================================================
-        // 答题结束（修复：保存失败时提示并保留本地数据）
+        // 答题结束
         // ============================================================
         async function endQuiz(reason) {
             if (timerInterval) { clearInterval(timerInterval);
@@ -1627,7 +1618,6 @@
             var mode = currentMode;
             var score = userScore;
 
-            // 更新各模式的历史最高分和今日最高分（不更新 totalScore）
             if (mode === 'warmup') {
                 if (score > (currentUser.todayWarmup || 0)) {
                     currentUser.todayWarmup = score;
@@ -1674,12 +1664,10 @@
                 }
             }
 
-            // 更新今日总积分（仅用于展示，但已不在主菜单显示，保留用于后续可能用到）
             var todayTotal = (currentUser.todayWarmup || 0) + (currentUser.todayRank || 0) + (currentUser.todayChallenge || 0);
             currentUser.todayTotal = todayTotal;
             currentUser.dailyScoreDate = today;
 
-            // 尝试保存到云端
             try {
                 var saved = await saveUserToCloud(currentUser);
                 if (saved && saved.user) {
@@ -1696,13 +1684,10 @@
                 console.log('✅ 用户数据已保存到云端');
             } catch (e) {
                 console.error('❌ 云端保存失败:', e);
-                // 提示用户保存失败，但数据已保存在本地缓存，稍后可重试
                 alert('⚠️ 数据保存失败，但本地已记录，请稍后重新登录或联系管理员。错误：' + e.message);
-                // 保留本地数据
                 setStorage('currentUser', currentUser);
             }
 
-            // 显示结果页面（无论保存是否成功，都展示本次得分）
             document.getElementById('resName').textContent = currentUser.name;
             document.getElementById('resUnit').textContent = currentUser.unit;
             document.getElementById('resMode').textContent = getModeIcon(mode) + ' ' + getModeLabel(mode);
@@ -2250,6 +2235,9 @@
             }
         }
 
+        // ============================================================
+        // [修改] renderAdminData - 增加删除按钮
+        // ============================================================
         async function renderAdminData() {
             try {
                 var list = await fetchAllUsers();
@@ -2272,8 +2260,11 @@
                             '<div><span class="font-medium">' + u.name + '</span><span class="text-gray-500 ml-2">(' +
                             u.unit + ')</span><span class="text-primary font-bold ml-2">' + (u.totalScore || 0) +
                             '分</span><span class="text-gray-400 ml-2">排位剩余: ' + remain + '次</span></div>' +
-                            '<div class="user-item-actions"><button onclick="resetUserPassword(\'' + u.name +
-                            '\')" class="reset-pwd-btn">🔑 重置密码</button></div>' +
+                            '<div class="user-item-actions">' +
+                            '<button onclick="resetUserPassword(\'' + u.name + '\')" class="reset-pwd-btn">🔑 重置密码</button>' +
+                            // [新增] 删除按钮
+                            '<button onclick="deleteUser(\'' + u.name + '\')" class="delete-user-btn">🗑️ 删除</button>' +
+                            '</div>' +
                             '</div>';
                     }
                 }
@@ -2283,6 +2274,46 @@
             }
         }
 
+        // ============================================================
+        // [新增] 删除用户函数
+        // ============================================================
+        async function deleteUser(name) {
+            if (!confirm('⚠️ 确定要删除用户 "' + name + '" 及其所有数据（包括积分、排位记录等）吗？此操作不可恢复！')) {
+                return;
+            }
+            const adminKey = prompt('请输入管理员密码以确认删除操作：');
+            if (adminKey !== ADMIN_PWD) {
+                alert('密码错误，操作取消');
+                return;
+            }
+
+            showLoading();
+            try {
+                const result = await apiCall('/delete-user', 'POST', { name: name, adminKey: adminKey });
+                if (result && result.error) {
+                    alert('删除失败：' + result.error);
+                } else {
+                    alert('✅ 用户 "' + name + '" 已成功删除');
+                    // 如果删除的是当前登录用户，则自动登出
+                    if (currentUser && currentUser.name === name) {
+                        localStorage.removeItem('currentUser');
+                        currentUser = null;
+                        showPage('loginPage');
+                    }
+                    await renderAdminData();
+                    await updateUserCache();
+                }
+            } catch (error) {
+                alert('网络错误，请重试');
+                console.error(error);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // ============================================================
+        // 其他管理员功能
+        // ============================================================
         async function resetUserPassword(name) {
             if (!confirm('确认重置用户 "' + name + '" 的密码为 "123456" 吗？')) return;
             showLoading();
@@ -2466,6 +2497,7 @@
         window.saveQuestion = saveQuestion;
         window.deleteQuestion = deleteQuestion;
         window.syncDefaultQuiz = syncDefaultQuiz;
+        window.deleteUser = deleteUser; // [新增] 暴露删除函数
         window.API_BASE = API_BASE;
         window.checkDailyReset = checkDailyReset;
         window.startAutoResetTimer = startAutoResetTimer;
