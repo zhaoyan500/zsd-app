@@ -1,5 +1,5 @@
 // /functions/api/register.js
-import { getBeijingDate, generateSalt, hashPassword } from './_utils.js';
+import { hashPassword, generateSalt } from './_utils.js';
 
 export async function onRequest(context) {
     const { request, env } = context;
@@ -27,15 +27,16 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '用户名已存在' }), { status: 409, headers });
         }
 
-        const id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 6);
-        const now = new Date().toISOString();
-        const today = getBeijingDate();
-
         // 生成盐并哈希密码
         const salt = generateSalt();
         const hashedPwd = await hashPassword(pwd, salt);
-        const storedPwd = `${salt}:${hashedPwd}`;
+        const storedPwd = `${salt}:${hashedPwd}`;  // 存储格式：salt:hash
 
+        const id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 6);
+        const now = new Date().toISOString();
+        const today = new Date().toISOString().split('T')[0];
+
+        // 初始化所有积分为 0
         await db.prepare(`
             INSERT INTO users (
                 id, name, unit, pwd, 
@@ -54,11 +55,12 @@ export async function onRequest(context) {
             FROM users WHERE id = ?
         `).bind(id).first();
 
-        // 返回时补齐 rank 信息
-        user.rank_remain = 3;
-        user.rankDaily = { date: today, used: 0 };
+        user.rank_remain = 3; // 新用户默认剩余3次
 
-        return new Response(JSON.stringify({ success: true, user }), { headers });
+        // 不返回密码
+        delete user.pwd;
+
+        return new Response(JSON.stringify({ success: true, user: user }), { headers });
     } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
     }
