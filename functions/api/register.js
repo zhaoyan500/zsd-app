@@ -27,16 +27,14 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '用户名已存在' }), { status: 409, headers });
         }
 
-        // 生成盐并哈希密码
         const salt = generateSalt();
         const hashedPwd = await hashPassword(pwd, salt);
-        const storedPwd = `${salt}:${hashedPwd}`;  // 存储格式：salt:hash
+        const storedPwd = `${salt}:${hashedPwd}`;
 
         const id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 6);
         const now = new Date().toISOString();
         const today = new Date().toISOString().split('T')[0];
 
-        // 初始化所有积分为 0
         await db.prepare(`
             INSERT INTO users (
                 id, name, unit, pwd, 
@@ -55,9 +53,7 @@ export async function onRequest(context) {
             FROM users WHERE id = ?
         `).bind(id).first();
 
-        user.rank_remain = 3; // 新用户默认剩余3次
-
-        // 不返回密码
+        user.rank_remain = 3;
         delete user.pwd;
 
         return new Response(JSON.stringify({ success: true, user: user }), { headers });

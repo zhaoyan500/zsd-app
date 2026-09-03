@@ -22,7 +22,6 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
 
-        // 生成盐并哈希新密码
         const salt = generateSalt();
         const hashedPwd = await hashPassword(newPwd, salt);
         const storedPwd = `${salt}:${hashedPwd}`;
