@@ -12,7 +12,7 @@ export async function onRequest(context) {
         const db = env.D1_DB;
 
         if (period === 'week') {
-            // ===== 周榜：本周各赛制最高分之和 =====
+            // 周榜：本周各赛制最高分之和（基于 daily_scores 表）
             const now = new Date();
             const day = now.getUTCDay();
             const diff = (day === 0 ? 7 : day) - 1;
@@ -46,7 +46,6 @@ export async function onRequest(context) {
         }
 
         // ===== 月榜：最近4个有答题行为的周（按赛制最高分） =====
-        // 获取所有每日各赛制记录（近一年）
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
         const startDateLimit = oneYearAgo.toISOString().split('T')[0];
@@ -58,7 +57,6 @@ export async function onRequest(context) {
         `).bind(startDateLimit).all();
         const historyRows = historyResult.results || [];
 
-        // 获取用户信息
         const usersResult = await db.prepare(`SELECT id, name, unit FROM users`).all();
         const users = usersResult.results || [];
         const userInfo = {};
@@ -66,7 +64,6 @@ export async function onRequest(context) {
             userInfo[u.id] = { name: u.name, unit: u.unit };
         }
 
-        // 按用户分组
         const userMap = {};
         for (const row of historyRows) {
             const userId = row.user_id;
@@ -84,7 +81,6 @@ export async function onRequest(context) {
             const records = userMap[userId];
             records.sort((a, b) => a.date.localeCompare(b.date));
 
-            // 按周汇总：每周各赛制最高分，并求和得到周积分
             const weekMap = {};
             for (const rec of records) {
                 const weekStart = getWeekStart(rec.date);
@@ -96,17 +92,15 @@ export async function onRequest(context) {
                 weekMap[weekStart].challenge = Math.max(weekMap[weekStart].challenge, rec.challenge);
             }
 
-            // 计算每周积分
             const weekScores = {};
             for (const w in weekMap) {
                 weekScores[w] = weekMap[w].warmup + weekMap[w].rank + weekMap[w].challenge;
             }
 
-            // 取最近4个有积分（>0）的周
             const weeksWithScore = Object.keys(weekScores)
                 .filter(w => weekScores[w] > 0)
                 .sort((a, b) => b.localeCompare(a));
-            const recentWeeks = weeksWithScore.slice(0, 4);
+            const recentWeeks = weeksWithScore.slice(0, 4); // 取最近4个活跃周
 
             let total = 0;
             for (const w of recentWeeks) {
@@ -143,7 +137,6 @@ export async function onRequest(context) {
     }
 }
 
-// 辅助：获取日期所在周的周一日期（UTC）
 function getWeekStart(dateStr) {
     const d = new Date(dateStr + 'T00:00:00Z');
     const day = d.getUTCDay();

@@ -1,4 +1,4 @@
-// /functions/api/save.js
+// /functions/api/save.js（完整版）
 export async function onRequest(context) {
     const { request, env } = context;
     const headers = {
@@ -22,7 +22,6 @@ export async function onRequest(context) {
         const now = new Date().toISOString();
         const today = new Date().toISOString().split('T')[0];
 
-        // 获取用户当前数据
         const user = await db.prepare(`
             SELECT id, version, total_score, daily_score_date
             FROM users WHERE name = ?
@@ -94,7 +93,7 @@ export async function onRequest(context) {
             `).bind(userId, today, used, used).run();
         }
 
-        // ===== 新增：写入 daily_scores 表（每日各赛制最高分） =====
+        // ===== 写入 daily_scores 表（用于周榜/月榜） =====
         await db.prepare(`
             INSERT INTO daily_scores (user_id, date, warmup_score, rank_score, challenge_score)
             VALUES (?, ?, ?, ?, ?)
