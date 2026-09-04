@@ -4,9 +4,13 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "D1_DB"
 database_name = "zsd-db"
-database_id = "your-database-id-here"   # 替换为您的实际数据库 ID
+database_id = "your-database-id-here"   # 请替换为您的实际数据库 ID
 
-# 数据库迁移（按顺序执行）
+# ============================================================
+# 数据库迁移（按 tag 顺序执行）
+# ============================================================
+
+# v1: 添加版本字段和索引
 [[migrations]]
 tag = "v1"
 sql = """
@@ -15,7 +19,21 @@ CREATE INDEX IF NOT EXISTS idx_rank_daily_user_date ON rank_daily(user_id, date)
 CREATE INDEX IF NOT EXISTS idx_quiz_history_user_mode ON quiz_history(user_id, mode);
 """
 
-# reward_date 字段已存在，此迁移仅为占位，避免重复执行报错
+# v2: reward_date 字段已在之前手动添加或由其他迁移创建，此处仅占位，避免重复执行报错
 [[migrations]]
 tag = "v2"
 sql = "SELECT 1;"
+
+# v3: 创建每日各赛制最高分记录表（用于周榜/月榜统计）
+[[migrations]]
+tag = "v3"
+sql = """
+CREATE TABLE IF NOT EXISTS daily_scores (
+    user_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    warmup_score INTEGER DEFAULT 0,
+    rank_score INTEGER DEFAULT 0,
+    challenge_score INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, date)
+);
+"""
