@@ -26,14 +26,9 @@ export async function onRequest(context) {
             let rankDaily = await db.prepare(`
                 SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
             `).bind(user.id, today).first();
-            
-            if (!rankDaily) {
-                rankDaily = { used: 0 };
-            }
-            
-            const used = rankDaily.used || 0;
-            user.rank_remain = Math.max(0, 3 - used);
-            user.rankDaily = { date: today, used: used };
+            if (!rankDaily) rankDaily = { used: 0 };
+            user.rank_remain = Math.max(0, 3 - (rankDaily.used || 0));
+            user.rankDaily = { date: today, used: rankDaily.used };
         }
 
         return new Response(JSON.stringify(results), { headers });

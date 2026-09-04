@@ -95,17 +95,25 @@ export async function onRequest(context) {
             `).bind(userId, today, used, used).run();
         }
 
-        // 写入 daily_scores 表
-        await db.prepare(`
-            INSERT INTO daily_scores (user_id, date, warmup_score, rank_score, challenge_score)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, date) DO UPDATE SET
-                warmup_score = excluded.warmup_score,
-                rank_score = excluded.rank_score,
-                challenge_score = excluded.challenge_score
-        `).bind(userId, today, todayWarmup, todayRank, todayChallenge).run();
+        // 写入 daily_scores（如果表存在）
+        try {
+            await db.prepare(`
+                INSERT INTO daily_scores (user_id, date, warmup_score, rank_score, challenge_score)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, date) DO UPDATE SET
+                    warmup_score = excluded.warmup_score,
+                    rank_score = excluded.rank_score,
+                    challenge_score = excluded.challenge_score
+            `).bind(userId, today, todayWarmup, todayRank, todayChallenge).run();
+        } catch (e) {
+            if (e.message && e.message.includes('no such table')) {
+                console.warn('daily_scores 表不存在，跳过写入');
+            } else {
+                throw e;
+            }
+        }
 
-        // 处理每日积分历史（total_score 累计）
+        // 处理每日积分历史
         const existingDaily = await db.prepare(`
             SELECT daily_score FROM daily_score_history WHERE user_id = ? AND date = ?
         `).bind(userId, today).first();

@@ -23,10 +23,7 @@ export async function onRequest(context) {
         const db = env.D1_DB;
         const today = getBeijingDate();
 
-        const user = await db.prepare(`
-            SELECT id FROM users WHERE name = ?
-        `).bind(name).first();
-
+        const user = await db.prepare(`SELECT id FROM users WHERE name = ?`).bind(name).first();
         if (!user) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
@@ -58,7 +55,6 @@ export async function onRequest(context) {
             rankDaily: { date: today, used: used },
             remain: remain
         }), { headers });
-
     } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
     }
