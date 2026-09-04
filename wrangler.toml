@@ -6,7 +6,11 @@ binding = "D1_DB"
 database_name = "zsd-db"
 database_id = "your-database-id-here"   # 替换为实际数据库 ID
 
-# 完整迁移：一次性创建所有表
+# ============================================================
+# 数据库迁移（按 tag 顺序执行）
+# ============================================================
+
+# v1: 添加版本字段、索引，并创建所有基础表
 [[migrations]]
 tag = "v1"
 sql = """
@@ -71,4 +75,33 @@ CREATE TABLE IF NOT EXISTS quiz_history (
     score INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_history_user_mode ON quiz_history(user_id, mode);
+"""
+
+# v2: reward_date 字段已在 v1 中创建，此处占位避免重复执行错误
+[[migrations]]
+tag = "v2"
+sql = "SELECT 1;"
+
+# v3: daily_scores 已在 v1 中创建，此处占位
+[[migrations]]
+tag = "v3"
+sql = "SELECT 1;"
+
+# v4: 创建题库表
+[[migrations]]
+tag = "v4"
+sql = """
+CREATE TABLE IF NOT EXISTS questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mode TEXT NOT NULL,
+    question TEXT NOT NULL,
+    option_a TEXT NOT NULL,
+    option_b TEXT NOT NULL,
+    option_c TEXT NOT NULL,
+    option_d TEXT NOT NULL,
+    correct TEXT NOT NULL CHECK (correct IN ('A','B','C','D')),
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_questions_mode ON questions(mode);
 """
