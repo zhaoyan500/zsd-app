@@ -24,7 +24,6 @@
         }
     </script>
     <style>
-        /* 样式保持不变（省略，与之前一致） */
         .page { display: none !important; min-height: 100vh; padding-top: 100px; padding-bottom: 60px; }
         .page.active { display: block !important; }
         .page.quiz-mode { padding-top: 60px; padding-bottom: 50px; }
@@ -344,7 +343,6 @@
         <div class="max-w-md mx-auto pt-3 p-5">
             <div class="bg-white rounded-xl shadow-md p-5">
                 <h2 class="text-xl font-bold text-primary text-center mb-4">🏅 排行榜</h2>
-                <!-- 修改点1：移除“总榜”选项卡，默认选中“战队榜” -->
                 <div class="flex flex-wrap gap-2 mb-4 justify-center">
                     <span class="rank-tab active" data-rank="unit" onclick="setRankFilter('unit')">战队榜</span>
                     <span class="rank-tab" data-rank="month" onclick="setRankFilter('month')">月榜</span>
@@ -680,11 +678,9 @@
                 if (contentType && contentType.includes('application/json')) {
                     result = await response.json();
                 } else {
-                    // 非 JSON 响应，视为错误
                     result = { error: `服务器返回非 JSON 内容 (状态 ${response.status})` };
                 }
                 if (!response.ok) {
-                    // 如果响应是 JSON 且包含 error 字段，直接返回；否则构造错误
                     if (!result || !result.error) {
                         result = { error: `请求失败 (状态 ${response.status})`, _httpError: true };
                     }
@@ -1012,7 +1008,7 @@
         }
 
         // ============================================================
-        // 登录 - 修复登录错误处理
+        // 登录 - 修复错误处理
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
@@ -1115,8 +1111,15 @@
                     }
                 }
 
+                // 关键修复：先保存本地，再尝试云端同步（即使失败也不影响登录）
                 setStorage('currentUser', currentUser);
-                await saveUserToCloud(currentUser);
+                try {
+                    await saveUserToCloud(currentUser);
+                    console.log('✅ 用户数据已同步到云端');
+                } catch (e) {
+                    console.error('❌ 云端同步失败:', e);
+                    alert('⚠️ 登录成功，但云端数据同步失败，请稍后在主页点击“刷新”或重新登录以同步。');
+                }
 
                 showPage('mainPage');
                 updateMainUI();
@@ -1481,7 +1484,7 @@
         }
 
         // ============================================================
-        // 答题逻辑（不变）
+        // 答题逻辑
         // ============================================================
         function renderQuestion() {
             var item = quizQuestions[quizIndex];
