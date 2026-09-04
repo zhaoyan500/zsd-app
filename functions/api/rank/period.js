@@ -1,4 +1,6 @@
 // /functions/api/rank/period.js
+import { getBeijingDate } from '../_utils.js';
+
 export async function onRequest(context) {
     const { request, env } = context;
     const headers = {
@@ -11,14 +13,11 @@ export async function onRequest(context) {
         const period = url.searchParams.get('period') || 'week';
         const db = env.D1_DB;
 
-        if (period === 'week') {
-            // 周榜：本周各赛制最高分之和（基于 daily_scores 表）
-            const now = new Date();
-            const day = now.getUTCDay();
-            const diff = (day === 0 ? 7 : day) - 1;
-            const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff));
-            const startDate = monday.toISOString().split('T')[0];
+        const today = getBeijingDate(); // 北京时间日期
 
+        if (period === 'week') {
+            // 周榜：本周一（北京时间）至今
+            const weekStart = getWeekStart(today); // 本周一的日期
             const rows = await db.prepare(`
                 SELECT 
                     u.id,
@@ -35,20 +34,21 @@ export async function onRequest(context) {
                 GROUP BY u.id, u.name, u.unit
                 HAVING period_score > 0
                 ORDER BY period_score DESC
-            `).bind(startDate).all();
+            `).bind(weekStart).all();
 
             const results = rows.results || [];
             return new Response(JSON.stringify({
                 period: 'week',
-                startDate: startDate,
+                startDate: weekStart,
                 ranking: results
             }), { headers });
         }
 
         // ===== 月榜：最近4个有答题行为的周（按赛制最高分） =====
+        // 查询近一年的数据（避免全表扫描）
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-        const startDateLimit = oneYearAgo.toISOString().split('T')[0];
+        const startDateLimit = oneYearAgo.toISOString().split('T')[0]; // 使用 UTC 日期作为下限，不影响比较
 
         const historyResult = await db.prepare(`
             SELECT user_id, date, warmup_score, rank_score, challenge_score 
@@ -81,6 +81,7 @@ export async function onRequest(context) {
             const records = userMap[userId];
             records.sort((a, b) => a.date.localeCompare(b.date));
 
+            // 按周汇总（基于北京时间）
             const weekMap = {};
             for (const rec of records) {
                 const weekStart = getWeekStart(rec.date);
@@ -97,10 +98,11 @@ export async function onRequest(context) {
                 weekScores[w] = weekMap[w].warmup + weekMap[w].rank + weekMap[w].challenge;
             }
 
+            // 取最近4个有积分的周
             const weeksWithScore = Object.keys(weekScores)
                 .filter(w => weekScores[w] > 0)
                 .sort((a, b) => b.localeCompare(a));
-            const recentWeeks = weeksWithScore.slice(0, 4); // 取最近4个活跃周
+            const recentWeeks = weeksWithScore.slice(0, 4);
 
             let total = 0;
             for (const w of recentWeeks) {
@@ -137,10 +139,14 @@ export async function onRequest(context) {
     }
 }
 
+// 获取给定日期所在周的周一日期（基于北京时间）
 function getWeekStart(dateStr) {
-    const d = new Date(dateStr + 'T00:00:00Z');
-    const day = d.getUTCDay();
-    const diff = (day === 0 ? 7 : day) - 1;
-    const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - diff));
+    // dateStr 格式为 YYYY-MM-DD，视为北京时间日期
+    const parts = dateStr.split('-').map(Number);
+    const d = new Date(Date.UTC(parts[0], parts[1]-1, parts[2])); // 构建 UTC 时间，保证后续计算正确
+    // 获取星期几（UTC），因为日期字符串是 UTC 0 点，但代表北京时间当天，星期几与北京时间一致
+    const day = d.getUTCDay(); // 0=周日
+    const diff = (day === 0 ? 7 : day) - 1; // 周一为0
+    const monday = new Date(Date.UTC(parts[0], parts[1]-1, parts[2] - diff));
     return monday.toISOString().split('T')[0];
 }
