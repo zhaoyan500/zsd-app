@@ -24,6 +24,7 @@
         }
     </script>
     <style>
+        /* 样式保持不变（省略，与之前一致） */
         .page { display: none !important; min-height: 100vh; padding-top: 100px; padding-bottom: 60px; }
         .page.active { display: block !important; }
         .page.quiz-mode { padding-top: 60px; padding-bottom: 50px; }
@@ -574,7 +575,6 @@
         let timeLeft = 20;
         let isAnswering = false;
         let quizQuestions = [];
-        // 修改点2：rankFilter 默认改为 'unit'
         let rankFilter = 'unit';
         let audioCtx = null;
         var cachedUsers = [];
@@ -663,7 +663,7 @@
         }
 
         // ============================================================
-        // API 调用
+        // API 调用 - 增强错误处理
         // ============================================================
         async function apiCall(endpoint, method, data) {
             var options = {
@@ -675,11 +675,20 @@
             }
             try {
                 var response = await fetch(API_BASE + endpoint, options);
-                if (!response.ok) {
-                    console.error('API响应错误:', response.status, response.statusText);
-                    return { error: '服务器错误: ' + response.status, _httpError: true };
+                var result;
+                var contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    result = await response.json();
+                } else {
+                    // 非 JSON 响应，视为错误
+                    result = { error: `服务器返回非 JSON 内容 (状态 ${response.status})` };
                 }
-                var result = await response.json();
+                if (!response.ok) {
+                    // 如果响应是 JSON 且包含 error 字段，直接返回；否则构造错误
+                    if (!result || !result.error) {
+                        result = { error: `请求失败 (状态 ${response.status})`, _httpError: true };
+                    }
+                }
                 return result;
             } catch (e) {
                 console.error('API调用失败:', endpoint, e);
@@ -1003,7 +1012,7 @@
         }
 
         // ============================================================
-        // 登录
+        // 登录 - 修复登录错误处理
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
@@ -1018,11 +1027,22 @@
                 console.log('📥 登录API返回:', JSON.stringify(result));
 
                 if (result && result.error) {
-                    alert(result.error);
+                    if (result._httpError || result._networkError) {
+                        alert('服务器异常，请稍后重试');
+                    } else {
+                        alert(result.error);
+                    }
                     hideLoading();
                     return;
                 }
-                var rawUser = result.user || result;
+
+                if (!result || !result.user) {
+                    alert('登录响应异常，请重试');
+                    hideLoading();
+                    return;
+                }
+
+                var rawUser = result.user;
                 currentUser = normalizeUser(rawUser);
 
                 console.log('📥 登录后 currentUser:', JSON.stringify(currentUser));
@@ -1461,7 +1481,7 @@
         }
 
         // ============================================================
-        // 答题逻辑
+        // 答题逻辑（不变）
         // ============================================================
         function renderQuestion() {
             var item = quizQuestions[quizIndex];
@@ -1837,7 +1857,6 @@
                 teamTotal.classList.add('hidden');
             } else {
                 sel.classList.add('hidden');
-                // 月榜和周榜不显示战队总榜
                 teamTotal.classList.add('hidden');
             }
             renderRank();
@@ -1911,7 +1930,6 @@
                 cachedUsers = list;
                 cachedTeamRanking = teamRanking;
 
-                // 由于已移除总榜，这里只处理 unit、month、week
                 if (rankFilter === 'unit') {
                     teamTotalRank.classList.add('hidden');
                     populateTeamSelector();
@@ -1953,7 +1971,6 @@
                     rankBox.innerHTML = html;
 
                 } else {
-                    // month 或 week
                     teamTotalRank.classList.add('hidden');
                     var period = rankFilter === 'week' ? 'week' : 'month';
                     try {
