@@ -16,8 +16,6 @@ export async function onRequest(context) {
         const body = await request.json();
         const { name, userData } = body;
 
-        console.log('[Save] 收到请求:', { name, userData });
-
         if (!name || !userData) {
             return new Response(JSON.stringify({ error: '参数不完整' }), { status: 400, headers });
         }
@@ -26,7 +24,7 @@ export async function onRequest(context) {
         const now = new Date().toISOString();
         const today = getBeijingDate();
 
-        // 获取用户
+        // 1. 获取用户
         const user = await db.prepare(`
             SELECT id, version, total_score, daily_score_date
             FROM users WHERE name = ?
@@ -62,50 +60,60 @@ export async function onRequest(context) {
 
         console.log('[Save] 今日数据:', { todayWarmup, todayRank, todayChallenge, todayTotal });
 
-        // 1. 更新 users 表
-        await db.prepare(`
-            UPDATE users SET
-                warmup_score = ?,
-                warmup_date = ?,
-                rank_score = ?,
-                challenge_score = ?,
-                today_warmup_score = ?,
-                today_rank_score = ?,
-                today_challenge_score = ?,
-                daily_score = ?,
-                daily_score_date = ?,
-                challenge_used = ?,
-                challenge_date = ?,
-                version = version + 1,
-                updated_at = ?
-            WHERE name = ?
-        `).bind(
-            warmupScore,
-            warmupDate,
-            rankScore,
-            challengeScore,
-            todayWarmup,
-            todayRank,
-            todayChallenge,
-            todayTotal,
-            today,
-            challengeUsed,
-            challengeDate,
-            now,
-            name
-        ).run();
-
-        // 2. 更新排位赛每日记录
-        if (userData.rankDaily && userData.rankDaily.used !== undefined) {
-            const used = parseInt(userData.rankDaily.used) || 0;
+        // 2. 更新 users 表
+        try {
             await db.prepare(`
-                INSERT INTO rank_daily (user_id, date, used)
-                VALUES (?, ?, ?)
-                ON CONFLICT(user_id, date) DO UPDATE SET used = ?
-            `).bind(userId, today, used, used).run();
+                UPDATE users SET
+                    warmup_score = ?,
+                    warmup_date = ?,
+                    rank_score = ?,
+                    challenge_score = ?,
+                    today_warmup_score = ?,
+                    today_rank_score = ?,
+                    today_challenge_score = ?,
+                    daily_score = ?,
+                    daily_score_date = ?,
+                    challenge_used = ?,
+                    challenge_date = ?,
+                    version = version + 1,
+                    updated_at = ?
+                WHERE name = ?
+            `).bind(
+                warmupScore,
+                warmupDate,
+                rankScore,
+                challengeScore,
+                todayWarmup,
+                todayRank,
+                todayChallenge,
+                todayTotal,
+                today,
+                challengeUsed,
+                challengeDate,
+                now,
+                name
+            ).run();
+        } catch (e) {
+            console.error('[Save] users 更新失败:', e);
+            return new Response(JSON.stringify({ error: '更新用户数据失败: ' + e.message }), { status: 500, headers });
         }
 
-        // 3. 写入 daily_scores（使用 INSERT OR REPLACE 简化）
+        // 3. 更新排位赛每日记录
+        if (userData.rankDaily && userData.rankDaily.used !== undefined) {
+            try {
+                const used = parseInt(userData.rankDaily.used) || 0;
+                await db.prepare(`
+                    INSERT INTO rank_daily (user_id, date, used)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(user_id, date) DO UPDATE SET used = ?
+                `).bind(userId, today, used, used).run();
+            } catch (e) {
+                console.error('[Save] rank_daily 更新失败:', e);
+                return new Response(JSON.stringify({ error: '更新排位记录失败: ' + e.message }), { status: 500, headers });
+            }
+        }
+
+        // 4. 写入 daily_scores
         try {
             await db.prepare(`
                 INSERT OR REPLACE INTO daily_scores (user_id, date, warmup_score, rank_score, challenge_score)
@@ -113,10 +121,10 @@ export async function onRequest(context) {
             `).bind(userId, today, todayWarmup, todayRank, todayChallenge).run();
         } catch (e) {
             console.error('[Save] daily_scores 写入失败:', e);
-            // 不影响主流程
+            return new Response(JSON.stringify({ error: '写入 daily_scores 失败: ' + e.message }), { status: 500, headers });
         }
 
-        // 4. 处理 daily_score_history
+        // 5. 处理 daily_score_history 和 total_score
         try {
             const existingDaily = await db.prepare(`
                 SELECT daily_score FROM daily_score_history WHERE user_id = ? AND date = ?
@@ -146,10 +154,10 @@ export async function onRequest(context) {
             console.log('[Save] 总积分更新为:', totalScore);
         } catch (e) {
             console.error('[Save] daily_score_history 处理失败:', e);
-            // 如果该表有问题，仍返回成功（但总积分可能未更新）
+            return new Response(JSON.stringify({ error: '更新总积分失败: ' + e.message }), { status: 500, headers });
         }
 
-        // 5. 查询最新用户数据并返回
+        // 6. 查询最新用户数据并返回
         const updatedUser = await db.prepare(`
             SELECT id, name, unit, 
                    warmup_score, rank_score, challenge_score,
@@ -172,7 +180,7 @@ export async function onRequest(context) {
         }), { headers });
 
     } catch (err) {
-        console.error('[Save] 错误:', err);
-        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
+        console.error('[Save] 未捕获错误:', err);
+        return new Response(JSON.stringify({ error: '服务器内部错误: ' + err.message }), { status: 500, headers });
     }
 }
