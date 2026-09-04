@@ -580,7 +580,7 @@
         let resetTimerId = null;
 
         // ============================================================
-        // 内置题库
+        // 内置题库（后备）
         // ============================================================
         function getDefaultQuiz(mode) {
             var warmup = [
@@ -652,16 +652,11 @@
         // ============================================================
         // 加载状态
         // ============================================================
-        function showLoading() {
-            document.getElementById('loadingOverlay').classList.add('active');
-        }
-
-        function hideLoading() {
-            document.getElementById('loadingOverlay').classList.remove('active');
-        }
+        function showLoading() { document.getElementById('loadingOverlay').classList.add('active'); }
+        function hideLoading() { document.getElementById('loadingOverlay').classList.remove('active'); }
 
         // ============================================================
-        // API 调用 - 增强错误处理
+        // API 调用
         // ============================================================
         async function apiCall(endpoint, method, data) {
             var options = {
@@ -697,9 +692,7 @@
         // ============================================================
         function normalizeUser(user) {
             if (!user) return null;
-
             console.log('📥 normalizeUser 原始数据:', JSON.stringify(user));
-
             var rankDaily = user.rankDaily || null;
             if (!rankDaily && user.rank_daily) {
                 try {
@@ -710,33 +703,21 @@
             if (rankDaily && typeof rankDaily === 'object' && rankDaily.date && rankDaily.used !== undefined) {
                 validRankDaily = rankDaily;
             }
-
             var dailyScoreDate = user.dailyScoreDate || user.daily_score_date || '';
-
             if (!dailyScoreDate && validRankDaily && validRankDaily.date) {
                 dailyScoreDate = validRankDaily.date;
             }
-
             if (!dailyScoreDate) {
                 dailyScoreDate = DateUtils.getTodayCN();
             }
-
-            console.log('📥 dailyScoreDate 解析结果:', dailyScoreDate);
-
             var todayWarmup = user.todayWarmup || user.today_warmup_score || user.todayWarmupScore || 0;
             var todayRank = user.todayRank || user.today_rank_score || user.todayRankScore || 0;
             var todayChallenge = user.todayChallenge || user.today_challenge_score || user.todayChallengeScore || 0;
             var todayTotal = user.todayTotal || user.daily_score || user.dailyScore || 0;
-
             var warmupScore = user.warmupScore || user.warmup_score || 0;
             var rankScore = user.rankScore || user.rank_score || 0;
             var challengeScore = user.challengeScore || user.challenge_score || 0;
-
             var totalScore = user.totalScore || user.total_score || 0;
-
-            console.log('📥 totalScore 解析: user.totalScore=' + user.totalScore + ', user.total_score=' + user.total_score +
-                ', 最终值=' + totalScore);
-
             var result = {
                 id: user.id,
                 name: user.name,
@@ -759,8 +740,6 @@
                 created_at: user.created_at,
                 updated_at: user.updated_at
             };
-
-            console.log('📥 normalizeUser 输出:', JSON.stringify(result));
             return result;
         }
 
@@ -770,7 +749,6 @@
         function getStorage(key, def) {
             try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; }
         }
-
         function setStorage(key, val) {
             localStorage.setItem(key, JSON.stringify(val));
         }
@@ -787,12 +765,10 @@
             }
             return null;
         }
-
         function setRankDailyCache(name, data) {
             var key = 'rankDaily_' + (name || 'default');
             setStorage(key, data);
         }
-
         async function syncRankDailyFromCloud(name) {
             if (!name) return null;
             try {
@@ -826,7 +802,6 @@
                 soundEffect: 'crisp'
             });
         }
-
         function saveAdminConfig() {
             var cfg = {
                 warmup: document.getElementById('toggleWarmup').checked,
@@ -845,7 +820,6 @@
             document.getElementById('soundEffectSelect').value = cfg.soundEffect;
             return cfg;
         }
-
         function loadAdminConfig() {
             var cfg = getAdminConfig();
             document.getElementById('toggleWarmup').checked = cfg.warmup;
@@ -911,7 +885,6 @@
                 }
             } catch (_) {}
         }
-
         function previewSound() {
             saveAdminConfig();
             playSoundEffect();
@@ -955,7 +928,6 @@
                 if (pageId === 'mainPage') updateMainUI();
             }
         }
-
         function closeModal() {
             document.getElementById('welcomeModal').classList.add('hidden');
             showPage('mainPage');
@@ -969,11 +941,9 @@
             var unit = document.getElementById('unitSelect').value;
             var name = document.getElementById('userName').value.trim();
             var pwd = document.getElementById('userPwd').value.trim();
-
             if (!unit) return alert('请选择所属战队');
             if (!name) return alert('请输入姓名');
             if (!pwd) return alert('请设置登录密码');
-
             showLoading();
             try {
                 var result = await apiCall('/register', 'POST', { name: name, unit: unit, pwd: pwd });
@@ -984,7 +954,6 @@
                 }
                 var rawUser = result.user || result;
                 currentUser = normalizeUser(rawUser);
-
                 var today = DateUtils.getTodayCN();
                 await syncRankDailyFromCloud(currentUser.name);
                 currentUser.dailyScoreDate = today;
@@ -995,7 +964,6 @@
                 currentUser.challengeUsed = 0;
                 currentUser.challengeDate = today;
                 currentUser.totalScore = 0;
-
                 var modalText = document.getElementById('modalText');
                 modalText.innerText = unit === '神秘小分队' ? '欢迎实力超群的你加入挑战！' : '恭喜加入' + unit + '，让我们一起为荣誉而战！';
                 document.getElementById('welcomeModal').classList.remove('hidden');
@@ -1008,20 +976,15 @@
         }
 
         // ============================================================
-        // 登录 - 修复错误处理
+        // 登录
         // ============================================================
         async function userLogin() {
             var name = document.getElementById('loginName').value.trim();
             var pwd = document.getElementById('loginPwd').value.trim();
-
             if (!name || !pwd) return alert('请填写姓名和密码');
-
             showLoading();
             try {
                 var result = await apiCall('/login', 'POST', { name: name, pwd: pwd });
-
-                console.log('📥 登录API返回:', JSON.stringify(result));
-
                 if (result && result.error) {
                     if (result._httpError || result._networkError) {
                         alert('服务器异常，请稍后重试');
@@ -1031,20 +994,14 @@
                     hideLoading();
                     return;
                 }
-
                 if (!result || !result.user) {
                     alert('登录响应异常，请重试');
                     hideLoading();
                     return;
                 }
-
                 var rawUser = result.user;
                 currentUser = normalizeUser(rawUser);
-
-                console.log('📥 登录后 currentUser:', JSON.stringify(currentUser));
-
                 var today = DateUtils.getTodayCN();
-
                 if (!currentUser.dailyScoreDate) {
                     if (currentUser.rankDaily && currentUser.rankDaily.date) {
                         currentUser.dailyScoreDate = currentUser.rankDaily.date;
@@ -1052,18 +1009,13 @@
                         currentUser.dailyScoreDate = today;
                     }
                 }
-
                 if (currentUser.dailyScoreDate !== today) {
                     await checkDailyReset();
                 }
-
                 await syncRankDailyFromCloud(currentUser.name);
-
                 if (currentUser.totalScore === undefined || currentUser.totalScore === null) {
                     currentUser.totalScore = 0;
                 }
-
-                // 本地缓存恢复逻辑（保留）
                 const localUser = getStorage('currentUser', null);
                 if (localUser && (localUser.warmupScore > 0 || localUser.rankScore > 0 || localUser.challengeScore > 0)) {
                     const dbWarmup = currentUser.warmupScore || 0;
@@ -1110,8 +1062,6 @@
                         }
                     }
                 }
-
-                // 关键修复：先保存本地，再尝试云端同步（即使失败也不影响登录）
                 setStorage('currentUser', currentUser);
                 try {
                     await saveUserToCloud(currentUser);
@@ -1120,7 +1070,6 @@
                     console.error('❌ 云端同步失败:', e);
                     alert('⚠️ 登录成功，但云端数据同步失败，请稍后在主页点击“刷新”或重新登录以同步。');
                 }
-
                 showPage('mainPage');
                 updateMainUI();
                 hideLoading();
@@ -1137,10 +1086,8 @@
         async function checkDailyReset() {
             if (!currentUser) return;
             if (isResetting) return;
-
             const today = DateUtils.getTodayCN();
             const lastDate = currentUser.dailyScoreDate || '';
-
             if (!lastDate) {
                 if (currentUser.rankDaily && currentUser.rankDaily.date) {
                     currentUser.dailyScoreDate = currentUser.rankDaily.date;
@@ -1157,21 +1104,17 @@
                     return;
                 }
             }
-
             if (currentUser.dailyScoreDate !== today) {
                 isResetting = true;
                 console.log('🔄 检测到新的一天 (' + today + ')，重置用户 ' + currentUser.name);
-
                 try {
                     currentUser.todayWarmup = 0;
                     currentUser.todayRank = 0;
                     currentUser.todayChallenge = 0;
                     currentUser.todayTotal = 0;
                     currentUser.dailyScoreDate = today;
-
                     currentUser.challengeUsed = 0;
                     currentUser.challengeDate = today;
-
                     const rankData = await syncRankDailyFromCloud(currentUser.name);
                     if (rankData) {
                         currentUser.rankDaily = rankData;
@@ -1181,9 +1124,7 @@
                         currentUser.rankRemain = 3;
                         setRankDailyCache(currentUser.name, currentUser.rankDaily);
                     }
-
                     console.log('📊 用户 ' + currentUser.name + ' 总积分保持不变: ' + currentUser.totalScore);
-
                     try {
                         await saveUserToCloud(currentUser);
                         console.log('✅ 每日数据重置并保存成功');
@@ -1191,7 +1132,6 @@
                         console.error('⚠️ 重置数据保存失败:', e);
                         setStorage('currentUser', currentUser);
                     }
-
                     showDailyResetNotification();
                     updateMainUI();
                 } catch (e) {
@@ -1201,7 +1141,6 @@
                 }
             }
         }
-
         function showDailyResetNotification() {
             const container = document.getElementById('floatingTextContainer');
             const el = document.createElement('div');
@@ -1222,7 +1161,6 @@
                 console.error('保存失败: 用户数据无效');
                 return { success: false, error: '用户数据无效' };
             }
-
             try {
                 const userData = {
                     id: user.id,
@@ -1242,17 +1180,13 @@
                     challengeDate: user.challengeDate || '',
                     version: (user.version || 1) + 1
                 };
-
                 console.log('📤 保存用户数据:', userData.name, '日期:', userData.dailyScoreDate);
-
                 const result = await apiCall('/save', 'POST', { name: user.name, userData: userData });
-
                 if (result && result.error) {
                     console.error('保存API返回错误:', result.error);
                     setStorage('currentUser', user);
                     throw new Error(result.error);
                 }
-
                 if (result && result.user) {
                     const updated = normalizeUser(result.user);
                     if (currentUser) {
@@ -1269,7 +1203,6 @@
                     console.log('✅ 用户数据保存成功, 总积分:', currentUser.totalScore);
                     return { success: true, user: result.user };
                 }
-
                 setStorage('currentUser', user);
                 return { success: true, user: user };
             } catch (error) {
@@ -1300,9 +1233,7 @@
         // ============================================================
         async function updateMainUI() {
             if (!currentUser) return;
-
             var today = DateUtils.getTodayCN();
-
             if (!currentUser.dailyScoreDate) {
                 if (currentUser.rankDaily && currentUser.rankDaily.date) {
                     currentUser.dailyScoreDate = currentUser.rankDaily.date;
@@ -1312,11 +1243,9 @@
                 setStorage('currentUser', currentUser);
                 await saveUserToCloud(currentUser);
             }
-
             if (currentUser.dailyScoreDate !== today) {
                 await checkDailyReset();
             }
-
             var rankData = getRankDailyCache(currentUser.name);
             if (!rankData || rankData.date !== today) {
                 await syncRankDailyFromCloud(currentUser.name);
@@ -1324,24 +1253,19 @@
                 currentUser.rankDaily = rankData;
                 currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
             }
-
             document.getElementById('mainUserName').textContent = currentUser.name;
             document.getElementById('mainUserUnit').textContent = currentUser.unit;
             document.getElementById('mainTotalScore').textContent = currentUser.totalScore || 0;
-
             document.getElementById('mainTodayWarmup').textContent = currentUser.todayWarmup || 0;
             document.getElementById('mainTodayRank').textContent = currentUser.todayRank || 0;
             document.getElementById('mainTodayChallenge').textContent = currentUser.todayChallenge || 0;
-
             var rankRemain = currentUser.rankRemain || 0;
             document.getElementById('mainRankRemain').textContent = rankRemain;
-
             var statusEl = document.getElementById('rankedStatus');
             if (statusEl) {
                 statusEl.textContent = '今日剩余: ' + rankRemain + '次 | 已用: ' + (3 - rankRemain) + '/3 | 最高: ' + (currentUser
                     .todayRank || 0);
             }
-
             var badge = document.getElementById('rankBadge');
             if (badge) {
                 if (rankRemain >= 3) {
@@ -1355,12 +1279,10 @@
                     badge.className = 'rank-remain-badge red';
                 }
             }
-
             document.getElementById('warmupStatus').textContent = currentUser.todayWarmup ? '今日最高: ' + currentUser
                 .todayWarmup : '今日未玩';
             document.getElementById('challengeStatus').textContent = '今日已用: ' + (currentUser.challengeUsed || 0) +
                 '/1 | 最高: ' + (currentUser.todayChallenge || 0);
-
             var cfg = getAdminConfig();
             var cards = document.querySelectorAll('.mode-card');
             var modes = ['warmup', 'ranked', 'challenge'];
@@ -1374,12 +1296,11 @@
                     cards[i].style.pointerEvents = 'auto';
                 }
             }
-
             setStorage('currentUser', currentUser);
         }
 
         // ============================================================
-        // 进入赛制
+        // 进入赛制 - 增加调试日志
         // ============================================================
         async function enterMode(mode) {
             if (!currentUser) {
@@ -1432,11 +1353,14 @@
                 }
             }
 
+            // ===== 获取题库 =====
             let questions = null;
             try {
                 const resp = await fetch(API_BASE + '/questions?mode=' + mode + '&_=' + Date.now());
+                console.log('[enterMode] 题库请求状态:', resp.status);
                 if (resp.ok) {
                     const data = await resp.json();
+                    console.log('[enterMode] 题库数据:', data);
                     if (Array.isArray(data) && data.length > 0) {
                         questions = data.map(q => ({
                             q: q.question,
@@ -1448,13 +1372,18 @@
                                 D: q.option_d
                             }
                         }));
+                    } else {
+                        console.warn('[enterMode] 返回数据为空，使用默认题库');
                     }
+                } else {
+                    console.error('[enterMode] 请求失败:', resp.status);
                 }
             } catch (e) {
-                console.warn('从服务器获取题库失败，使用默认题库', e);
+                console.error('[enterMode] 获取题库出错:', e);
             }
             if (!questions || questions.length === 0) {
                 questions = getDefaultQuiz(mode);
+                console.warn('[enterMode] 使用默认题库，长度:', questions.length);
             }
             quizQuestions = questions;
 
@@ -1484,14 +1413,13 @@
         }
 
         // ============================================================
-        // 答题逻辑
+        // 答题逻辑（保持不变）
         // ============================================================
         function renderQuestion() {
             var item = quizQuestions[quizIndex];
             if (!item) return;
             document.getElementById('currentNum').textContent = quizIndex + 1;
             document.getElementById('questionText').textContent = item.q;
-
             var optBox = document.getElementById('optionBox');
             optBox.innerHTML = '';
             var keys = ['A', 'B', 'C', 'D'];
@@ -1508,13 +1436,11 @@
                 };
                 optBox.appendChild(div);
             }
-
             document.getElementById('tipBox').classList.add('hidden');
             var nextBtn = document.getElementById('nextBtn');
             nextBtn.disabled = true;
             nextBtn.className = 'w-full bg-gray-400 text-white py-3 rounded-lg font-medium disabled:opacity-60';
             isAnswering = false;
-
             var cfg = getAdminConfig();
             if (cfg.timer && (currentMode === 'ranked' || currentMode === 'challenge')) {
                 var limit = currentMode === 'ranked' ? 20 : 15;
@@ -1550,7 +1476,6 @@
             tipBox.className = 'rounded-lg p-3 mb-3 text-sm bg-red-50 text-danger';
             tipText.innerHTML = '<i class="fa fa-times-circle"></i> 答题超时，本题不得分';
             tipBox.classList.remove('hidden');
-
             var item = quizQuestions[quizIndex];
             var opts = document.querySelectorAll('.option-item');
             for (var i = 0; i < opts.length; i++) {
@@ -1560,12 +1485,10 @@
                     opts[i].classList.add('border-success', 'bg-green-50');
                 }
             }
-
             if (currentMode === 'challenge') {
                 endQuiz('超时淘汰');
                 return;
             }
-
             var nextBtn = document.getElementById('nextBtn');
             nextBtn.disabled = false;
             nextBtn.className = 'w-full bg-primary text-white py-3 rounded-lg font-medium';
@@ -1580,22 +1503,18 @@
             isAnswering = true;
             if (timerInterval) { clearInterval(timerInterval);
                 timerInterval = null; }
-
             var item = quizQuestions[quizIndex];
             var isRight = selKey === item.a;
             var tipBox = document.getElementById('tipBox');
             var tipText = document.getElementById('tipText');
             var allOpt = document.querySelectorAll('.option-item');
             for (var i = 0; i < allOpt.length; i++) { allOpt[i].onclick = null; }
-
             var cfg = getAdminConfig();
             var addScore = 10;
             var comboBonus = 0;
-
             if (isRight) {
                 dom.classList.remove('border-gray-300');
                 dom.classList.add('border-success', 'bg-green-50');
-
                 if (cfg.combo && (currentMode === 'ranked' || currentMode === 'challenge')) {
                     comboCount++;
                     if (currentMode === 'ranked') {
@@ -1611,11 +1530,9 @@
                     }
                     updateComboDisplay();
                 }
-
                 var totalAdd = addScore + comboBonus;
                 userScore += totalAdd;
                 document.getElementById('nowScore').textContent = userScore;
-
                 var bonusText = comboBonus > 0 ? ' (连击+' + comboBonus + ')' : '';
                 tipBox.className = 'rounded-lg p-3 mb-3 text-sm bg-green-50 text-success';
                 tipText.innerHTML = '<i class="fa fa-check-circle"></i> 回答正确！+' + totalAdd + '分' + bonusText;
@@ -1630,7 +1547,6 @@
                 }
                 tipBox.className = 'rounded-lg p-3 mb-3 text-sm bg-red-50 text-danger';
                 tipText.innerHTML = '<i class="fa fa-times-circle"></i> 回答错误，正确答案：' + item.a + '. ' + item.opt[item.a];
-
                 if (currentMode === 'challenge') {
                     endQuiz('答错淘汰');
                     return;
@@ -1640,14 +1556,11 @@
                     updateComboDisplay();
                 }
             }
-
             tipBox.classList.remove('hidden');
-
             if (quizIndex >= quizQuestions.length - 1) {
                 endQuiz('完成');
                 return;
             }
-
             var nextBtn = document.getElementById('nextBtn');
             nextBtn.disabled = false;
             nextBtn.className = 'w-full bg-primary text-white py-3 rounded-lg font-medium';
@@ -1671,11 +1584,9 @@
             if (timerInterval) { clearInterval(timerInterval);
                 timerInterval = null; }
             if (!currentUser) return;
-
             var today = DateUtils.getTodayCN();
             var mode = currentMode;
             var score = userScore;
-
             if (mode === 'warmup') {
                 if (score > (currentUser.todayWarmup || 0)) {
                     currentUser.todayWarmup = score;
@@ -1721,11 +1632,9 @@
                     currentUser.challengeScore = score;
                 }
             }
-
             var todayTotal = (currentUser.todayWarmup || 0) + (currentUser.todayRank || 0) + (currentUser.todayChallenge || 0);
             currentUser.todayTotal = todayTotal;
             currentUser.dailyScoreDate = today;
-
             try {
                 var saved = await saveUserToCloud(currentUser);
                 if (saved && saved.user) {
@@ -1745,26 +1654,22 @@
                 alert('⚠️ 数据保存失败，但本地已记录，请稍后重新登录或联系管理员。错误：' + e.message);
                 setStorage('currentUser', currentUser);
             }
-
             document.getElementById('resName').textContent = currentUser.name;
             document.getElementById('resUnit').textContent = currentUser.unit;
             document.getElementById('resMode').textContent = getModeIcon(mode) + ' ' + getModeLabel(mode);
             document.getElementById('totalScore').textContent = userScore;
-
             var detail = [];
             if (mode === 'ranked' && comboCount > 0) detail.push('连击 x' + comboCount);
             if (reason === '超时淘汰') detail.push('⏱️ 超时淘汰');
             if (reason === '答错淘汰') detail.push('💥 答错淘汰');
             if (detail.length) document.getElementById('resultDetail').textContent = detail.join(' · ');
             else document.getElementById('resultDetail').textContent = '✅ 闯关完成！';
-
             var titleMap = {
                 '完成': '🎉 闯关完成！',
                 '超时淘汰': '⏱️ 超时淘汰',
                 '答错淘汰': '💥 答错淘汰'
             };
             document.getElementById('resultTitle').textContent = titleMap[reason] || '🏁 结束';
-
             showPage('resultPage');
             updateMainUI();
         }
@@ -1777,12 +1682,10 @@
                 updateMainUI();
             }
         }
-
         function backToMain() {
             showPage('mainPage');
             updateMainUI();
         }
-
         function updateComboDisplay() {
             var el = document.getElementById('comboDisplay');
             if (comboCount > 0) {
@@ -1824,7 +1727,6 @@
                 return { users: [], teamRanking: [] };
             }
         }
-
         function calculateTeamRanking(users) {
             var teamMap = {};
             for (var i = 0; i < users.length; i++) {
@@ -1845,7 +1747,6 @@
             });
             return teamList;
         }
-
         function setRankFilter(type) {
             rankFilter = type;
             var tabs = document.querySelectorAll('.rank-tab');
@@ -1864,7 +1765,6 @@
             }
             renderRank();
         }
-
         function populateTeamSelector() {
             var select = document.getElementById('selectedTeam');
             var currentValue = select.value;
@@ -1908,7 +1808,6 @@
                 select.value = currentValue;
             }
         }
-
         function countTeamMembers(unit) {
             if (!cachedUsers) return 0;
             var count = 0;
@@ -1917,22 +1816,17 @@
             }
             return count;
         }
-
         async function renderRank() {
             var rankBox = document.getElementById('rankList');
             var teamTotalBox = document.getElementById('teamTotalList');
             var teamTotalRank = document.getElementById('teamTotalRank');
-
             showLoading();
-
             try {
                 var result = await fetchAllUsersWithRetry();
                 var list = result.users;
                 var teamRanking = result.teamRanking;
-
                 cachedUsers = list;
                 cachedTeamRanking = teamRanking;
-
                 if (rankFilter === 'unit') {
                     teamTotalRank.classList.add('hidden');
                     populateTeamSelector();
@@ -1972,7 +1866,6 @@
                         }
                     }
                     rankBox.innerHTML = html;
-
                 } else {
                     teamTotalRank.classList.add('hidden');
                     var period = rankFilter === 'week' ? 'week' : 'month';
@@ -1980,11 +1873,9 @@
                         var resp = await fetch(API_BASE + '/rank/period?period=' + period);
                         var data = await resp.json();
                         if (data.error) throw new Error(data.error);
-
                         var ranking = data.ranking || [];
                         var startDate = data.startDate || '';
                         var top10 = ranking.slice(0, 10);
-
                         var html = '<div class="rank-section-title">📅 ' +
                             (period === 'week' ? '本周' : '本月') + '排行 TOP10</div>';
                         html += '<div class="text-xs text-gray-400 mb-2">统计起始：' + startDate + '</div>';
@@ -2020,7 +1911,6 @@
                 hideLoading();
             }
         }
-
         async function updateUserCache() {
             try {
                 var result = await fetchAllUsersWithRetry();
@@ -2042,7 +1932,7 @@
             const container = document.getElementById('questionList');
             container.innerHTML = '<p class="text-center text-gray-400 py-2">加载中...</p>';
             try {
-                const resp = await fetch(API_BASE + '/questions?mode=' + mode + '&_=' + Date.now());
+                const resp = await fetch(API_BASE + '/questions?mode=' + mode + '&_=' + Date.now() + '&adminKey=' + ADMIN_PWD);
                 if (!resp.ok) {
                     throw new Error('HTTP ' + resp.status);
                 }
@@ -2055,7 +1945,6 @@
                 container.innerHTML = '<p class="text-center text-red-500 py-2">加载失败：' + e.message + '</p>';
             }
         }
-
         function renderQuestionList(questions) {
             const container = document.getElementById('questionList');
             if (!questions || questions.length === 0) {
@@ -2085,7 +1974,6 @@
             });
             container.innerHTML = html;
         }
-
         function showAddQuestion() {
             document.getElementById('editQuestionId').value = '';
             document.getElementById('questionModalTitle').textContent = '添加题目';
@@ -2099,11 +1987,9 @@
             document.getElementById('qSort').value = '0';
             document.getElementById('questionModal').classList.remove('hidden');
         }
-
         function closeQuestionModal() {
             document.getElementById('questionModal').classList.add('hidden');
         }
-
         function editQuestion(id) {
             const q = questionListData.find(item => item.id === id);
             if (!q) return;
@@ -2119,7 +2005,6 @@
             document.getElementById('qSort').value = q.sort_order || 0;
             document.getElementById('questionModal').classList.remove('hidden');
         }
-
         async function saveQuestion() {
             const id = document.getElementById('editQuestionId').value;
             const mode = document.getElementById('qMode').value;
@@ -2130,7 +2015,6 @@
             const option_d = document.getElementById('qOptD').value.trim();
             const correct = document.getElementById('qCorrect').value.trim().toUpperCase();
             const sort_order = parseInt(document.getElementById('qSort').value) || 0;
-
             if (!question || !option_a || !option_b || !option_c || !option_d || !correct) {
                 alert('请填写完整信息');
                 return;
@@ -2139,7 +2023,6 @@
                 alert('正确答案必须是 A、B、C、D 中的一个');
                 return;
             }
-
             const payload = {
                 mode, question, correct, option_a, option_b, option_c, option_d, sort_order, adminKey: ADMIN_PWD
             };
@@ -2149,7 +2032,6 @@
                 method = 'PUT';
                 payload.id = parseInt(id);
             }
-
             try {
                 showLoading();
                 const resp = await fetch(url, {
@@ -2168,7 +2050,6 @@
                 hideLoading();
             }
         }
-
         async function deleteQuestion(id) {
             if (!confirm('确定删除该题目吗？')) return;
             try {
@@ -2186,7 +2067,6 @@
                 hideLoading();
             }
         }
-
         async function syncDefaultQuiz() {
             if (!confirm('将硬编码的默认题库同步到数据库（会覆盖已有题目）？')) return;
             const mode = currentQuestionMode;
@@ -2236,11 +2116,9 @@
             document.getElementById('batchData').value = '';
             document.getElementById('batchFile').value = '';
         }
-
         function closeBatchImport() {
             document.getElementById('batchImportModal').classList.add('hidden');
         }
-
         function readBatchFile(input) {
             const file = input.files[0];
             if (!file) return;
@@ -2250,7 +2128,6 @@
             };
             reader.readAsText(file);
         }
-
         async function importBatch() {
             const mode = document.getElementById('batchMode').value;
             const rawData = document.getElementById('batchData').value.trim();
@@ -2258,7 +2135,6 @@
                 alert('请粘贴 JSON 数据或选择文件');
                 return;
             }
-
             let questions;
             try {
                 questions = JSON.parse(rawData);
@@ -2267,13 +2143,11 @@
                 alert('JSON 格式错误：' + e.message);
                 return;
             }
-
             const payload = questions.map(q => ({
                 ...q,
                 mode: mode,
                 sort_order: q.sort_order || 0
             }));
-
             for (const q of payload) {
                 if (!q.question || !q.option_a || !q.option_b || !q.option_c || !q.option_d || !q.correct) {
                     alert('存在不完整的题目，请检查所有字段');
@@ -2285,7 +2159,6 @@
                 }
                 q.correct = q.correct.toUpperCase();
             }
-
             showLoading();
             try {
                 const resp = await fetch(API_BASE + '/questions/batch', {
@@ -2293,7 +2166,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         adminKey: ADMIN_PWD,
-                        questions: payload
+                        questions: payload,
+                        mode: mode,
+                        overwrite: true
                     })
                 });
                 const data = await resp.json();
@@ -2322,10 +2197,6 @@
                 alert('密码错误，请重试');
             }
         }
-
-        // ============================================================
-        // 用户管理 - 渲染列表 (含删除按钮)
-        // ============================================================
         async function renderAdminData() {
             try {
                 var list = await fetchAllUsers();
@@ -2360,10 +2231,6 @@
                 document.getElementById('userAllList').innerHTML = '<p class="text-red-500 py-4">加载失败</p>';
             }
         }
-
-        // ============================================================
-        // 删除用户
-        // ============================================================
         async function deleteUser(name) {
             if (!confirm('⚠️ 确定要删除用户 "' + name + '" 及其所有数据（包括积分、排位记录等）吗？此操作不可恢复！')) {
                 return;
@@ -2373,7 +2240,6 @@
                 alert('密码错误，操作取消');
                 return;
             }
-
             showLoading();
             try {
                 const result = await apiCall('/delete-user', 'POST', { name: name, adminKey: adminKey });
@@ -2396,10 +2262,6 @@
                 hideLoading();
             }
         }
-
-        // ============================================================
-        // 其他管理员功能
-        // ============================================================
         async function resetUserPassword(name) {
             if (!confirm('确认重置用户 "' + name + '" 的密码为 "123456" 吗？')) return;
             showLoading();
@@ -2417,11 +2279,9 @@
                 hideLoading();
             }
         }
-
         function forgotPassword() {
             alert('🔑 如忘记密码，请联系管理员重置（重置后默认密码为 123456）。\n管理员入口在注册页面底部。');
         }
-
         async function clearAllUser() {
             if (!confirm('⚠️ 确定清空所有用户数据？无法恢复！')) return;
             var adminKey = prompt('请输入管理员密码确认操作：');
@@ -2444,15 +2304,10 @@
                 hideLoading();
             }
         }
-
         function logoutAdmin() {
             document.getElementById('adminPwd').value = '';
             showPage('registerPage');
         }
-
-        // ============================================================
-        // 登出
-        // ============================================================
         function logoutUser() {
             currentUser = null;
             setStorage('currentUser', null);
@@ -2475,17 +2330,13 @@
             }
             document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
             document.getElementById('registerPage').classList.add('active');
-
             document.getElementById('modalConfirmBtn').addEventListener('click', closeModal);
-
             var savedUser = getStorage('currentUser', null);
             if (savedUser) {
                 try {
                     currentUser = normalizeUser(savedUser);
                     var today = DateUtils.getTodayCN();
-
                     await checkDailyReset();
-
                     var rankData = getRankDailyCache(currentUser.name);
                     if (!rankData || rankData.date !== today) {
                         await syncRankDailyFromCloud(currentUser.name);
@@ -2493,7 +2344,6 @@
                         currentUser.rankDaily = rankData;
                         currentUser.rankRemain = Math.max(0, 3 - (parseInt(rankData.used) || 0));
                     }
-
                     showPage('mainPage');
                     await updateMainUI();
                     setStorage('currentUser', currentUser);
@@ -2502,13 +2352,10 @@
                     localStorage.removeItem('currentUser');
                 }
             }
-
             fetchAllUsers().then(function(list) {
                 cachedUsers = list;
             }).catch(function() {});
-
             startAutoResetTimer();
-
             setInterval(async function() {
                 if (currentUser) {
                     const today = DateUtils.getTodayCN();
@@ -2518,29 +2365,21 @@
                     }
                 }
             }, 60000);
-
             console.log('🌅 每日自动重置定时器已启动，北京时间 00:00 准时重置');
         }
 
-        // ============================================================
-        // 启动北京时间 00:00 自动重置定时器
-        // ============================================================
         function startAutoResetTimer() {
             if (resetTimerId) {
                 clearTimeout(resetTimerId);
                 resetTimerId = null;
             }
-
             const now = new Date();
             const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
             const beijingDate = beijingNow.toISOString().split('T')[0];
             const tomorrow = new Date(beijingDate + 'T16:00:00.000Z');
             tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-
             const msUntilReset = tomorrow.getTime() - now.getTime();
-
             console.log('⏰ 距离下一次北京时间 00:00 重置还有 ' + Math.floor(msUntilReset / 1000) + ' 秒');
-
             resetTimerId = setTimeout(async function() {
                 console.log('🌅 北京时间 00:00 自动重置定时器触发');
                 if (currentUser) {
@@ -2591,7 +2430,6 @@
         window.API_BASE = API_BASE;
         window.checkDailyReset = checkDailyReset;
         window.startAutoResetTimer = startAutoResetTimer;
-
         document.addEventListener('DOMContentLoaded', init);
         if (document.readyState === 'complete') init();
     </script>
