@@ -1,4 +1,6 @@
-// /functions/api/save.js（完整版）
+// /functions/api/save.js
+import { getBeijingDate } from './_utils.js';
+
 export async function onRequest(context) {
     const { request, env } = context;
     const headers = {
@@ -20,7 +22,7 @@ export async function onRequest(context) {
 
         const db = env.D1_DB;
         const now = new Date().toISOString();
-        const today = new Date().toISOString().split('T')[0];
+        const today = getBeijingDate();
 
         const user = await db.prepare(`
             SELECT id, version, total_score, daily_score_date
@@ -93,7 +95,7 @@ export async function onRequest(context) {
             `).bind(userId, today, used, used).run();
         }
 
-        // ===== 写入 daily_scores 表（用于周榜/月榜） =====
+        // 写入 daily_scores 表
         await db.prepare(`
             INSERT INTO daily_scores (user_id, date, warmup_score, rank_score, challenge_score)
             VALUES (?, ?, ?, ?, ?)

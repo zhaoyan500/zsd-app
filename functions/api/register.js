@@ -1,5 +1,5 @@
 // /functions/api/register.js
-import { hashPassword, generateSalt } from './_utils.js';
+import { hashPassword, generateSalt, getBeijingDate } from './_utils.js';
 
 export async function onRequest(context) {
     const { request, env } = context;
@@ -33,7 +33,7 @@ export async function onRequest(context) {
 
         const id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 6);
         const now = new Date().toISOString();
-        const today = new Date().toISOString().split('T')[0];
+        const today = getBeijingDate();
 
         await db.prepare(`
             INSERT INTO users (

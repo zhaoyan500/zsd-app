@@ -23,37 +23,40 @@ export async function onRequest(context) {
         const db = env.D1_DB;
         const today = getBeijingDate();
 
-        const user = await db.prepare(`SELECT id FROM users WHERE name = ?`).bind(name).first();
+        const user = await db.prepare(`
+            SELECT id FROM users WHERE name = ?
+        `).bind(name).first();
+
         if (!user) {
             return new Response(JSON.stringify({ error: '用户不存在' }), { status: 404, headers });
         }
 
-        // 原子更新：used < 3 时才加 1
-        const result = await db.prepare(`
-            UPDATE rank_daily 
-            SET used = used + 1 
-            WHERE user_id = ? AND date = ? AND used < 3
-        `).bind(user.id, today).run();
+        let rankDaily = await db.prepare(`
+            SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
+        `).bind(user.id, today).first();
 
-        if (result.meta.changes === 0) {
+        let used = rankDaily ? (rankDaily.used || 0) : 0;
+
+        if (used >= 3) {
             return new Response(JSON.stringify({
                 success: false,
                 error: '今日排位赛次数已用完'
             }), { status: 400, headers });
         }
 
-        // 查询更新后的 used
-        const newRank = await db.prepare(`
-            SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
-        `).bind(user.id, today).first();
+        used += 1;
+        await db.prepare(`
+            INSERT INTO rank_daily (user_id, date, used) 
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, date) DO UPDATE SET used = ?
+        `).bind(user.id, today, used, used).run();
 
-        const used = newRank ? newRank.used : 0;
         const remain = Math.max(0, 3 - used);
 
         return new Response(JSON.stringify({
             success: true,
-            rankDaily: { date: today, used },
-            remain
+            rankDaily: { date: today, used: used },
+            remain: remain
         }), { headers });
 
     } catch (err) {

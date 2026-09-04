@@ -10,6 +10,8 @@ export async function onRequest(context) {
 
     try {
         const db = env.D1_DB;
+        const today = getBeijingDate();
+
         const users = await db.prepare(`
             SELECT id, name, unit, 
                    warmup_score, rank_score, challenge_score, total_score,
@@ -19,15 +21,19 @@ export async function onRequest(context) {
         `).all();
 
         const results = users.results || [];
-        const today = getBeijingDate();
 
         for (const user of results) {
             let rankDaily = await db.prepare(`
                 SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
             `).bind(user.id, today).first();
-            const used = rankDaily ? rankDaily.used : 0;
+            
+            if (!rankDaily) {
+                rankDaily = { used: 0 };
+            }
+            
+            const used = rankDaily.used || 0;
             user.rank_remain = Math.max(0, 3 - used);
-            user.rankDaily = { date: today, used };
+            user.rankDaily = { date: today, used: used };
         }
 
         return new Response(JSON.stringify(results), { headers });
