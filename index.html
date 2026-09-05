@@ -233,6 +233,7 @@
             </div>
 
             <div class="grid grid-cols-1 gap-4">
+                <!-- 热身赛 -->
                 <div class="mode-card" onclick="enterMode('warmup')">
                     <div class="flex justify-between items-center">
                         <div>
@@ -240,12 +241,13 @@
                             <span class="font-bold text-base">热身赛</span>
                             <span class="badge ml-2">练习</span>
                         </div>
-                        <span class="text-sm text-gray-400">10题 · 100分</span>
+                        <span class="text-sm text-gray-400">10题</span>  <!-- 仅显示题数 -->
                     </div>
                     <p class="text-xs text-gray-500 mt-1">不限次数 · 记录最高分 · 每日更新题库</p>
                     <div class="mt-2 text-xs text-gray-400" id="warmupStatus">今日最高: --</div>
                 </div>
 
+                <!-- 排位赛 -->
                 <div class="mode-card" onclick="enterMode('ranked')">
                     <div class="flex justify-between items-center">
                         <div>
@@ -253,12 +255,13 @@
                             <span class="font-bold text-base">排位赛</span>
                             <span class="badge ml-2">竞技</span>
                         </div>
-                        <span class="text-sm text-gray-400">15题 · 150分</span>
+                        <span class="text-sm text-gray-400">15题</span>  <!-- 仅显示题数 -->
                     </div>
                     <p class="text-xs text-gray-500 mt-1">每日3次 · 连击加分 · 20秒限时</p>
                     <div class="mt-2 text-xs text-gray-400" id="rankedStatus">今日剩余: 3次 | 最高: --</div>
                 </div>
 
+                <!-- 挑战赛 -->
                 <div class="mode-card" onclick="enterMode('challenge')">
                     <div class="flex justify-between items-center">
                         <div>
@@ -266,7 +269,7 @@
                             <span class="font-bold text-base">挑战赛</span>
                             <span class="badge ml-2">精英</span>
                         </div>
-                        <span class="text-sm text-gray-400">20题 · 200分</span>
+                        <span class="text-sm text-gray-400">20题</span>  <!-- 仅显示题数 -->
                     </div>
                     <p class="text-xs text-gray-500 mt-1">每日1次 · 答错即止 · 连击倍率 · 15秒限时</p>
                     <div class="mt-2 text-xs text-gray-400" id="challengeStatus">今日已用: 0/1 | 最高: --</div>
