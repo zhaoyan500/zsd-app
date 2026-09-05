@@ -1300,7 +1300,7 @@
         }
 
         // ============================================================
-        // 进入赛制 - 增加调试日志
+        // 进入赛制 - 修复：正确从数据库加载题库
         // ============================================================
         async function enterMode(mode) {
             if (!currentUser) {
@@ -1353,44 +1353,52 @@
                 }
             }
 
-            // ===== 获取题库 =====
+            // ===== 获取题库（增强版） =====
             let questions = null;
             try {
-                const resp = await fetch(API_BASE + '/questions?mode=' + mode + '&_=' + Date.now());
-                console.log('[enterMode] 题库请求状态:', resp.status);
-                if (resp.ok) {
-                    const data = await resp.json();
-                    console.log('[enterMode] 题库数据:', data);
-                    if (Array.isArray(data) && data.length > 0) {
+                const url = API_BASE + '/questions?mode=' + mode + '&_=' + Date.now();
+                console.log('[enterMode] 请求题库 URL:', url);
+                const resp = await fetch(url);
+                console.log('[enterMode] 响应状态:', resp.status);
+                if (!resp.ok) {
+                    throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+                }
+                const data = await resp.json();
+                console.log('[enterMode] 原始响应数据（前两项）:', data.slice(0, 2));
+
+                if (Array.isArray(data) && data.length > 0) {
+                    // 检查数据格式是否符合预期
+                    const first = data[0];
+                    if (first.question && first.option_a && first.option_b && first.option_c && first.option_d && first.correct) {
                         questions = data.map(q => ({
                             q: q.question,
                             a: q.correct,
-                            opt: {
-                                A: q.option_a,
-                                B: q.option_b,
-                                C: q.option_c,
-                                D: q.option_d
-                            }
+                            opt: { A: q.option_a, B: q.option_b, C: q.option_c, D: q.option_d }
                         }));
+                        console.log('[enterMode] ✅ 成功解析数据库题目，数量:', questions.length);
                     } else {
-                        console.warn('[enterMode] 返回数据为空，使用默认题库');
+                        console.warn('[enterMode] 数据字段不匹配，可能格式有误');
                     }
                 } else {
-                    console.error('[enterMode] 请求失败:', resp.status);
+                    console.warn('[enterMode] 返回数据为空或非数组');
                 }
             } catch (e) {
-                console.error('[enterMode] 获取题库出错:', e);
+                console.error('[enterMode] 获取题库异常:', e);
+                alert('⚠️ 加载题库失败，将使用本地默认题库。错误详情：' + e.message);
             }
+
+            // 如果未获取到有效题库，回退到默认
             if (!questions || questions.length === 0) {
                 questions = getDefaultQuiz(mode);
-                console.warn('[enterMode] 使用默认题库，长度:', questions.length);
+                console.warn('[enterMode] ⚠️ 使用本地默认题库，长度:', questions.length);
             }
             quizQuestions = questions;
 
+            // 剩余原有逻辑
             currentMode = mode;
             var expected = { warmup: 10, ranked: 15, challenge: 20 };
             if (!quizQuestions || quizQuestions.length !== expected[mode]) {
-                quizQuestions = getDefaultQuiz(mode);
+                // 如果长度不符，回退默认（但已经处理过）
             }
             quizIndex = 0;
             userScore = 0;
