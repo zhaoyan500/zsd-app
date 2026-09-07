@@ -11,13 +11,14 @@ export async function onRequest(context) {
     try {
         const url = new URL(request.url);
         const period = url.searchParams.get('period') || 'week';
+        const limit = url.searchParams.get('limit') || '10'; // 新增：可传 'all'
         const db = env.D1_DB;
 
         const today = getBeijingDate();
 
         if (period === 'week') {
             const weekStart = getWeekStart(today);
-            const rows = await db.prepare(`
+            let sql = `
                 SELECT 
                     u.id,
                     u.name,
@@ -33,8 +34,12 @@ export async function onRequest(context) {
                 GROUP BY u.id, u.name, u.unit
                 HAVING period_score > 0
                 ORDER BY period_score DESC
-            `).bind(weekStart).all();
-
+            `;
+            if (limit !== 'all') {
+                const limitNum = parseInt(limit) || 10;
+                sql += ` LIMIT ${limitNum}`;
+            }
+            const rows = await db.prepare(sql).bind(weekStart).all();
             const results = rows.results || [];
             return new Response(JSON.stringify({
                 period: 'week',
@@ -43,7 +48,7 @@ export async function onRequest(context) {
             }), { headers });
         }
 
-        // 月榜：最近4个有答题行为的周
+        // 月榜（保持不变，但也可增加 limit 参数，不强制）
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
         const startDateLimit = oneYearAgo.toISOString().split('T')[0];
@@ -119,6 +124,10 @@ export async function onRequest(context) {
         }
 
         ranking.sort((a, b) => b.period_score - a.period_score);
+        if (limit !== 'all') {
+            const limitNum = parseInt(limit) || 10;
+            ranking.splice(limitNum);
+        }
 
         return new Response(JSON.stringify({
             period: 'month',
