@@ -241,7 +241,7 @@
                             <span class="font-bold text-base">热身赛</span>
                             <span class="badge ml-2">练习</span>
                         </div>
-                        <span class="text-sm text-gray-400">10题</span>  <!-- 仅显示题数 -->
+                        <span class="text-sm text-gray-400">10题</span>
                     </div>
                     <p class="text-xs text-gray-500 mt-1">不限次数 · 记录最高分 · 每日更新题库</p>
                     <div class="mt-2 text-xs text-gray-400" id="warmupStatus">今日最高: --</div>
@@ -255,7 +255,7 @@
                             <span class="font-bold text-base">排位赛</span>
                             <span class="badge ml-2">竞技</span>
                         </div>
-                        <span class="text-sm text-gray-400">15题</span>  <!-- 仅显示题数 -->
+                        <span class="text-sm text-gray-400">15题</span>
                     </div>
                     <p class="text-xs text-gray-500 mt-1">每日3次 · 连击加分 · 20秒限时</p>
                     <div class="mt-2 text-xs text-gray-400" id="rankedStatus">今日剩余: 3次 | 最高: --</div>
@@ -269,7 +269,7 @@
                             <span class="font-bold text-base">挑战赛</span>
                             <span class="badge ml-2">精英</span>
                         </div>
-                        <span class="text-sm text-gray-400">20题</span>  <!-- 仅显示题数 -->
+                        <span class="text-sm text-gray-400">20题</span>
                     </div>
                     <p class="text-xs text-gray-500 mt-1">每日1次 · 答错即止 · 连击倍率 · 15秒限时</p>
                     <div class="mt-2 text-xs text-gray-400" id="challengeStatus">今日已用: 0/1 | 最高: --</div>
@@ -1827,6 +1827,10 @@
             }
             return count;
         }
+
+        // ============================================================
+        // renderRank - 修改战队榜为周积分，移除月榜起始日期
+        // ============================================================
         async function renderRank() {
             var rankBox = document.getElementById('rankList');
             var teamTotalBox = document.getElementById('teamTotalList');
@@ -1848,22 +1852,40 @@
                         hideLoading();
                         return;
                     }
-                    var members = list.filter(function(u) { return u.unit === team; });
-                    var teamTotal = 0;
-                    for (var n = 0; n < members.length; n++) {
-                        teamTotal += (members[n].totalScore || 0);
+                    // 获取本周积分映射（全部用户）
+                    var weekScores = {};
+                    try {
+                        var weekResp = await fetch(API_BASE + '/rank/period?period=week&limit=all');
+                        var weekData = await weekResp.json();
+                        if (weekData.ranking) {
+                            for (var w of weekData.ranking) {
+                                weekScores[w.name] = w.period_score || 0;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('获取周积分失败，将使用总积分', e);
                     }
+
+                    var members = list.filter(function(u) { return u.unit === team; });
+                    // 计算战队本周总分
+                    var teamWeekTotal = 0;
+                    for (var n = 0; n < members.length; n++) {
+                        teamWeekTotal += (weekScores[members[n].name] || 0);
+                    }
+                    // 按周积分排序（降序）
                     var sorted = members.slice().sort(function(a, b) {
-                        return (b.totalScore || 0) - (a.totalScore || 0);
+                        return (weekScores[b.name] || 0) - (weekScores[a.name] || 0);
                     });
-                    var html = '<div class="rank-section-title">🏅 ' + team + ' 内部排行</div>' +
-                        '<div class="text-sm text-gray-500 mb-3">战队积分：<b class="text-primary">' +
-                        teamTotal + '分</b> | 成员：' + members.length + '人</div>';
+
+                    var html = '<div class="rank-section-title">🏅 ' + team + ' 内部排行（本周积分）</div>' +
+                        '<div class="text-sm text-gray-500 mb-3">战队本周总积分：<b class="text-primary">' +
+                        teamWeekTotal + '分</b> | 成员：' + members.length + '人</div>';
                     if (sorted.length === 0) {
                         html += '<p class="text-center text-gray-400 py-4">该战队暂无成员</p>';
                     } else {
                         for (var p = 0; p < sorted.length; p++) {
                             var u = sorted[p];
+                            var score = weekScores[u.name] || 0;
                             var medal = p === 0 ? '🥇' : p === 1 ? '🥈' : p === 2 ? '🥉' : (p + 1);
                             var isMe = currentUser && u.name === currentUser.name;
                             html += '<div class="flex justify-between items-center p-3 bg-grayLight rounded-lg' +
@@ -1872,12 +1894,15 @@
                                 '<span class="ml-2 font-medium">' + u.name + '</span>' +
                                 (isMe ? '<span class="ml-2 text-primary text-xs">👈 你</span>' : '') +
                                 '</div>' +
-                                '<span class="font-bold text-success">' + (u.totalScore || 0) + '分</span>' +
+                                '<span class="font-bold text-success">' + score + '分</span>' +
                                 '</div>';
                         }
                     }
                     rankBox.innerHTML = html;
+                    hideLoading();
+                    return;
                 } else {
+                    // 周榜 / 月榜（移除统计起始日期）
                     teamTotalRank.classList.add('hidden');
                     var period = rankFilter === 'week' ? 'week' : 'month';
                     try {
@@ -1885,11 +1910,10 @@
                         var data = await resp.json();
                         if (data.error) throw new Error(data.error);
                         var ranking = data.ranking || [];
-                        var startDate = data.startDate || '';
                         var top10 = ranking.slice(0, 10);
                         var html = '<div class="rank-section-title">📅 ' +
                             (period === 'week' ? '本周' : '本月') + '排行 TOP10</div>';
-                        html += '<div class="text-xs text-gray-400 mb-2">统计起始：' + startDate + '</div>';
+                        // 已移除 "统计起始：" 行
                         if (top10.length === 0) {
                             html += '<p class="text-center text-gray-400 py-4">该周期暂无活跃用户</p>';
                         } else {
@@ -1914,14 +1938,15 @@
                         console.error('❌ 周期榜加载错误:', err);
                         rankBox.innerHTML = '<p class="text-center text-red-500 py-4">❌ 加载失败</p>';
                     }
+                    hideLoading();
                 }
-                hideLoading();
             } catch (error) {
                 console.error('加载排行榜失败:', error);
                 rankBox.innerHTML = '<p class="text-center text-red-500 py-4">❌ 加载失败，请刷新重试</p>';
                 hideLoading();
             }
         }
+
         async function updateUserCache() {
             try {
                 var result = await fetchAllUsersWithRetry();
