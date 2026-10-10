@@ -1,5 +1,5 @@
 // /functions/api/rank/period.js
-import { getBeijingDate } from '../_utils.js';
+import { getBeijingDate, getBeijingWeekStart, getBeijingMonthStart, getBeijingMonthEnd } from '../_utils.js';
 
 export async function onRequest(context) {
     const { request, env } = context;
@@ -11,129 +11,76 @@ export async function onRequest(context) {
     try {
         const url = new URL(request.url);
         const period = url.searchParams.get('period') || 'week';
-        const limit = url.searchParams.get('limit') || '10'; // 新增：可传 'all'
         const db = env.D1_DB;
 
         const today = getBeijingDate();
 
         if (period === 'week') {
-            const weekStart = getWeekStart(today);
-            let sql = `
-                SELECT 
+            // 周榜：本自然周（周一到周日）每日高分之和
+            const weekStart = getBeijingWeekStart(today);
+            const rows = await db.prepare(`
+                SELECT
                     u.id,
                     u.name,
                     u.unit,
                     COALESCE(MAX(ds.warmup_score), 0) AS warmup_max,
                     COALESCE(MAX(ds.rank_score), 0) AS rank_max,
                     COALESCE(MAX(ds.challenge_score), 0) AS challenge_max,
-                    (COALESCE(MAX(ds.warmup_score), 0) + 
-                     COALESCE(MAX(ds.rank_score), 0) + 
+                    (COALESCE(MAX(ds.warmup_score), 0) +
+                     COALESCE(MAX(ds.rank_score), 0) +
                      COALESCE(MAX(ds.challenge_score), 0)) AS period_score
                 FROM users u
                 LEFT JOIN daily_scores ds ON u.id = ds.user_id AND ds.date >= ?
                 GROUP BY u.id, u.name, u.unit
                 HAVING period_score > 0
                 ORDER BY period_score DESC
-            `;
-            if (limit !== 'all') {
-                const limitNum = parseInt(limit) || 10;
-                sql += ` LIMIT ${limitNum}`;
-            }
-            const rows = await db.prepare(sql).bind(weekStart).all();
+            `).bind(weekStart).all();
+
             const results = rows.results || [];
             return new Response(JSON.stringify({
                 period: 'week',
                 startDate: weekStart,
+                endDate: today,
                 ranking: results
             }), { headers });
         }
 
-        // 月榜（保持不变，但也可增加 limit 参数，不强制）
-        const oneYearAgo = new Date();
-        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-        const startDateLimit = oneYearAgo.toISOString().split('T')[0];
+        if (period === 'month') {
+            // 月榜：本自然月（1 号到月底）每日高分之和
+            const monthStart = getBeijingMonthStart(today);
+            const monthEnd = getBeijingMonthEnd(today);
+            const rows = await db.prepare(`
+                SELECT
+                    u.id,
+                    u.name,
+                    u.unit,
+                    COALESCE(MAX(ds.warmup_score), 0) AS warmup_max,
+                    COALESCE(MAX(ds.rank_score), 0) AS rank_max,
+                    COALESCE(MAX(ds.challenge_score), 0) AS challenge_max,
+                    (COALESCE(MAX(ds.warmup_score), 0) +
+                     COALESCE(MAX(ds.rank_score), 0) +
+                     COALESCE(MAX(ds.challenge_score), 0)) AS period_score
+                FROM users u
+                LEFT JOIN daily_scores ds ON u.id = ds.user_id
+                    AND ds.date >= ? AND ds.date <= ?
+                GROUP BY u.id, u.name, u.unit
+                HAVING period_score > 0
+                ORDER BY period_score DESC
+            `).bind(monthStart, monthEnd).all();
 
-        const historyResult = await db.prepare(`
-            SELECT user_id, date, warmup_score, rank_score, challenge_score 
-            FROM daily_scores 
-            WHERE date >= ?
-        `).bind(startDateLimit).all();
-        const historyRows = historyResult.results || [];
-
-        const usersResult = await db.prepare(`SELECT id, name, unit FROM users`).all();
-        const users = usersResult.results || [];
-        const userInfo = {};
-        for (const u of users) {
-            userInfo[u.id] = { name: u.name, unit: u.unit };
+            const results = rows.results || [];
+            return new Response(JSON.stringify({
+                period: 'month',
+                startDate: monthStart,
+                endDate: monthEnd,
+                ranking: results
+            }), { headers });
         }
 
-        const userMap = {};
-        for (const row of historyRows) {
-            const userId = row.user_id;
-            if (!userMap[userId]) userMap[userId] = [];
-            userMap[userId].push({
-                date: row.date,
-                warmup: row.warmup_score || 0,
-                rank: row.rank_score || 0,
-                challenge: row.challenge_score || 0
-            });
-        }
-
-        const ranking = [];
-        for (const userId in userMap) {
-            const records = userMap[userId];
-            records.sort((a, b) => a.date.localeCompare(b.date));
-
-            const weekMap = {};
-            for (const rec of records) {
-                const weekStart = getWeekStart(rec.date);
-                if (!weekMap[weekStart]) {
-                    weekMap[weekStart] = { warmup: 0, rank: 0, challenge: 0 };
-                }
-                weekMap[weekStart].warmup = Math.max(weekMap[weekStart].warmup, rec.warmup);
-                weekMap[weekStart].rank = Math.max(weekMap[weekStart].rank, rec.rank);
-                weekMap[weekStart].challenge = Math.max(weekMap[weekStart].challenge, rec.challenge);
-            }
-
-            const weekScores = {};
-            for (const w in weekMap) {
-                weekScores[w] = weekMap[w].warmup + weekMap[w].rank + weekMap[w].challenge;
-            }
-
-            const weeksWithScore = Object.keys(weekScores)
-                .filter(w => weekScores[w] > 0)
-                .sort((a, b) => b.localeCompare(a));
-            const recentWeeks = weeksWithScore.slice(0, 4);
-
-            let total = 0;
-            for (const w of recentWeeks) {
-                total += weekScores[w];
-            }
-
-            if (total > 0) {
-                const info = userInfo[userId];
-                if (info) {
-                    ranking.push({
-                        id: userId,
-                        name: info.name,
-                        unit: info.unit || '',
-                        period_score: total
-                    });
-                }
-            }
-        }
-
-        ranking.sort((a, b) => b.period_score - a.period_score);
-        if (limit !== 'all') {
-            const limitNum = parseInt(limit) || 10;
-            ranking.splice(limitNum);
-        }
-
+        // 兼容旧版字段：兜底返回错误
         return new Response(JSON.stringify({
-            period: 'month',
-            startDate: startDateLimit,
-            ranking: ranking
-        }), { headers });
+            error: 'period 参数必须是 week 或 month'
+        }), { status: 400, headers });
 
     } catch (err) {
         console.error('period 接口错误:', err);
@@ -142,13 +89,4 @@ export async function onRequest(context) {
             stack: err.stack
         }), { status: 500, headers });
     }
-}
-
-function getWeekStart(dateStr) {
-    const parts = dateStr.split('-').map(Number);
-    const d = new Date(Date.UTC(parts[0], parts[1]-1, parts[2]));
-    const day = d.getUTCDay();
-    const diff = (day === 0 ? 7 : day) - 1;
-    const monday = new Date(Date.UTC(parts[0], parts[1]-1, parts[2] - diff));
-    return monday.toISOString().split('T')[0];
 }
