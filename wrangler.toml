@@ -105,3 +105,23 @@ CREATE TABLE IF NOT EXISTS questions (
 );
 CREATE INDEX IF NOT EXISTS idx_questions_mode ON questions(mode);
 """
+
+# v5: 拆分 lifetime total_score
+# daily_score  = 实时答题分（按日突破式累加，每周清零）
+# start_of_day_score = 昨日的 daily_score（每日 login 时更新为今日起点）
+# historical_score = 历史统计积分（每周日 24:00 从 daily_score 转存，可兑换文创）
+[[migrations]]
+tag = "v5"
+sql = """
+ALTER TABLE users ADD COLUMN start_of_day_score INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN historical_score INTEGER DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_users_historical ON users(historical_score);
+"""
+
+# v6: 周转存记录（防止重复转存）
+# last_transfer_week = 该用户被转存的 ISO 周标记，例如 "2026-W41"
+[[migrations]]
+tag = "v6"
+sql = """
+ALTER TABLE users ADD COLUMN last_transfer_week TEXT DEFAULT '';
+"""
