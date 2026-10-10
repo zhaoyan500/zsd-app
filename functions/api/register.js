@@ -37,23 +37,28 @@ export async function onRequest(context) {
 
         await db.prepare(`
             INSERT INTO users (
-                id, name, unit, pwd, 
+                id, name, unit, pwd,
                 warmup_score, rank_score, challenge_score, total_score,
                 today_warmup_score, today_rank_score, today_challenge_score,
                 daily_score, daily_score_date,
-                warmup_date, challenge_date, challenge_used, 
-                version, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, ?, '', '', 0, 1, ?, ?)
+                warmup_date, challenge_date, challenge_used,
+                version, created_at, updated_at,
+                start_of_day_score, historical_score, last_transfer_week
+            ) VALUES (?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, ?, '', '', 0, 1, ?, ?, 0, 0, '')
         `).bind(id, name, unit, storedPwd, today, now, now).run();
 
         const user = await db.prepare(`
-            SELECT id, name, unit, 
-                   warmup_score, rank_score, challenge_score, total_score,
+            SELECT id, name, unit,
+                   warmup_score, rank_score, challenge_score,
+                   daily_score, historical_score, start_of_day_score,
                    warmup_date, challenge_date, challenge_used, version, created_at
             FROM users WHERE id = ?
         `).bind(id).first();
 
         user.rank_remain = 3;
+        user.total_score = 0;
+        user.historical_score = 0;
+        user.daily_score = 0;
         delete user.pwd;
 
         return new Response(JSON.stringify({ success: true, user: user }), { headers });
