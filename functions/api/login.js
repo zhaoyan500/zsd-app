@@ -23,7 +23,6 @@ export async function onRequest(context) {
         const db = env.D1_DB;
         const today = getBeijingDate();
 
-        // 查询用户（兼容新老字段）
         let user;
         let hasNewFields = false;
         try {
@@ -61,7 +60,6 @@ export async function onRequest(context) {
         // 验证密码
         const isValid = await verifyPassword(pwd, user.pwd);
         if (!isValid) {
-            // 兼容旧明文（自动升级）
             if (!user.pwd.includes(':')) {
                 if (user.pwd === pwd) {
                     const salt = generateSalt();
@@ -76,15 +74,16 @@ export async function onRequest(context) {
             }
         }
 
-        // ===== 周日 24:00 转存检查（lazy transfer） =====
+        // ===== 周转移检查（lazy）=====
         if (hasNewFields) {
             const currentWeek = getISOWeek(today);
             if (!user.last_transfer_week || user.last_transfer_week !== currentWeek) {
                 await runWeeklyTransfer(db, currentWeek);
-                // 重新加载
                 const refreshed = await db.prepare(`
                     SELECT id, daily_score, start_of_day_score, daily_score_date,
-                           reward_date, historical_score, last_transfer_week
+                           reward_date, historical_score, last_transfer_week,
+                           today_warmup_score, today_rank_score, today_challenge_score,
+                           warmup_score, rank_score, challenge_score
                     FROM users WHERE id = ?
                 `).bind(user.id).first();
                 if (refreshed) Object.assign(user, refreshed);
@@ -131,9 +130,7 @@ export async function onRequest(context) {
             `).bind(today, user.id).run();
         }
 
-        // ===== 每日登录奖励（按日突破式） =====
-        // daily_score = max(start_of_day, 今日三赛制max) + login_bonus(2)
-        // 登录时今日三赛制max = 0，所以 new_daily = start_of_day + 2
+        // ===== 每日登录奖励（按日突破式）=====
         if (user.reward_date !== today) {
             const startOfDay = user.start_of_day_score || user.daily_score || 0;
             const newDailyScore = startOfDay + 2;
@@ -162,10 +159,15 @@ export async function onRequest(context) {
         user.rank_remain = Math.max(0, 3 - used);
         user.rankDaily = { date: today, used: used };
 
-        // 字段补齐（兼容旧库）
+        // 字段补齐
         if (user.historical_score === undefined) user.historical_score = 0;
         if (user.start_of_day_score === undefined) user.start_of_day_score = 0;
-        // 兼容 total_score 字段供前端使用
+        if (user.today_warmup_score === undefined) user.today_warmup_score = 0;
+        if (user.today_rank_score === undefined) user.today_rank_score = 0;
+        if (user.today_challenge_score === undefined) user.today_challenge_score = 0;
+        if (user.daily_score === undefined) user.daily_score = 0;
+
+        // 后端权威 total_score
         user.total_score = (user.daily_score || 0) + (user.historical_score || 0);
 
         delete user.pwd;

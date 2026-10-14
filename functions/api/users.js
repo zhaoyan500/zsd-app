@@ -14,26 +14,37 @@ export async function onRequest(context) {
 
         let users;
         let hasNewFields = false;
+
         try {
+            // 一次 JOIN 查出所有用户 + 今日 rank_daily
             users = await db.prepare(`
-                SELECT id, name, unit,
-                       warmup_score, rank_score, challenge_score,
-                       daily_score, historical_score, start_of_day_score,
-                       warmup_date, challenge_date, challenge_used, version, created_at
-                FROM users
-                ORDER BY (COALESCE(historical_score,0) + COALESCE(daily_score,0)) DESC
-            `).all();
+                SELECT
+                    u.id, u.name, u.unit,
+                    u.warmup_score, u.rank_score, u.challenge_score,
+                    u.daily_score, u.historical_score, u.start_of_day_score,
+                    u.today_warmup_score, u.today_rank_score, u.today_challenge_score,
+                    u.warmup_date, u.challenge_date, u.challenge_used,
+                    u.version, u.created_at,
+                    COALESCE(rd.used, 0) AS rank_used
+                FROM users u
+                LEFT JOIN rank_daily rd ON rd.user_id = u.id AND rd.date = ?
+                ORDER BY (COALESCE(u.historical_score,0) + COALESCE(u.daily_score,0)) DESC
+            `).bind(today).all();
             hasNewFields = true;
         } catch (err) {
             if (err.message && err.message.includes('no such column')) {
                 console.warn('[Users] 新字段不存在，降级处理');
                 users = await db.prepare(`
-                    SELECT id, name, unit,
-                           warmup_score, rank_score, challenge_score, total_score,
-                           warmup_date, challenge_date, challenge_used, version, created_at
-                    FROM users
-                    ORDER BY total_score DESC
-                `).all();
+                    SELECT
+                        u.id, u.name, u.unit,
+                        u.warmup_score, u.rank_score, u.challenge_score, u.total_score,
+                        u.warmup_date, u.challenge_date, u.challenge_used,
+                        u.version, u.created_at,
+                        COALESCE(rd.used, 0) AS rank_used
+                    FROM users u
+                    LEFT JOIN rank_daily rd ON rd.user_id = u.id AND rd.date = ?
+                    ORDER BY u.total_score DESC
+                `).bind(today).all();
             } else {
                 throw err;
             }
@@ -42,19 +53,20 @@ export async function onRequest(context) {
         const results = users.results || [];
 
         for (const user of results) {
-            // 字段兜底
             if (user.historical_score === undefined) user.historical_score = 0;
             if (user.daily_score === undefined) user.daily_score = 0;
             if (user.start_of_day_score === undefined) user.start_of_day_score = 0;
-            // total_score 兜底：实时分 + 历史分
+            if (user.today_warmup_score === undefined) user.today_warmup_score = 0;
+            if (user.today_rank_score === undefined) user.today_rank_score = 0;
+            if (user.today_challenge_score === undefined) user.today_challenge_score = 0;
+
+            // 后端权威 total_score
             user.total_score = (user.daily_score || 0) + (user.historical_score || 0);
 
-            let rankDaily = await db.prepare(`
-                SELECT used FROM rank_daily WHERE user_id = ? AND date = ?
-            `).bind(user.id, today).first();
-            if (!rankDaily) rankDaily = { used: 0 };
-            user.rank_remain = Math.max(0, 3 - (rankDaily.used || 0));
-            user.rankDaily = { date: today, used: rankDaily.used };
+            const used = user.rank_used || 0;
+            user.rank_remain = Math.max(0, 3 - used);
+            user.rankDaily = { date: today, used: used };
+            delete user.rank_used;
         }
 
         return new Response(JSON.stringify(results), { headers });
