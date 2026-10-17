@@ -1,5 +1,6 @@
 // /functions/api/submit-score.js
 // 前端只上报本次答题结果，后端重算所有分数
+// ⚠️ 不设置严格分数上限，仅做合理性兜底（防止负数/异常大数）
 import { getBeijingDate, getISOWeek, runWeeklyTransfer } from './_utils.js';
 
 export async function onRequest(context) {
@@ -21,14 +22,14 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({ error: '参数不完整' }), { status: 400, headers });
         }
 
-        // ===== 1. 分数上限校验（防篡改）=====
-        const MAX_SCORE = { warmup: 100, ranked: 150, challenge: 200 };
-        const maxAllowed = MAX_SCORE[mode];
-        if (!maxAllowed) {
-            return new Response(JSON.stringify({ error: '未知模式' }), { status: 400, headers });
+        // ===== 1. 合理性兜底（不做严格上限）=====
+        // 只拒绝：负数、NaN、Infinity、异常超大值（防误报或恶意刷分）
+        if (!Number.isFinite(score) || score < 0) {
+            return new Response(JSON.stringify({ error: '分数无效' }), { status: 400, headers });
         }
-        if (score < 0 || score > maxAllowed) {
-            return new Response(JSON.stringify({ error: `分数超出范围 (0~${maxAllowed})` }), { status: 400, headers });
+        // 宽松兜底：单次答题分数不应超过 10000（远超任何合理连击）
+        if (score > 10000) {
+            return new Response(JSON.stringify({ error: '分数异常' }), { status: 400, headers });
         }
         const finalScore = Math.floor(score);
 
@@ -111,6 +112,7 @@ export async function onRequest(context) {
         }
 
         // ===== 6. 后端重算所有 today_* 和 daily_score =====
+        // 注意：取 MAX 保证只增不减，但分数本身不设上限
         const newTodayWarmup = mode === 'warmup'
             ? Math.max(user.today_warmup_score || 0, finalScore)
             : (user.today_warmup_score || 0);
@@ -134,7 +136,7 @@ export async function onRequest(context) {
         // 登录奖励：save 时若今天未登录，补 +2
         const loginBonus = (user.reward_date === today) ? 2 : 0;
 
-        // 按日突破式
+        // 按日突破式（不设上限）
         const todayQuizMax = newTodayWarmup + newTodayRank + newTodayChallenge;
         const newDailyScore = Math.max(startOfDay, todayQuizMax) + loginBonus;
 
