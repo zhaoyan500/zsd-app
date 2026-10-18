@@ -125,3 +125,59 @@ tag = "v6"
 sql = """
 ALTER TABLE users ADD COLUMN last_transfer_week TEXT DEFAULT '';
 """
+
+# v7: 补齐迁移（针对数据库停留在 v1 状态、v5/v6 未执行的情况）
+[[migrations]]
+tag = "v7"
+sql = """
+-- 数据兜底：把旧的 total_score 视为 historical_score 的初始值
+UPDATE users
+SET historical_score = COALESCE(total_score, 0)
+WHERE COALESCE(historical_score, 0) = 0
+  AND COALESCE(total_score, 0) > 0;
+
+-- 兜底：确保新字段有合理默认值
+UPDATE users SET start_of_day_score = 0 WHERE start_of_day_score IS NULL;
+UPDATE users SET historical_score = 0 WHERE historical_score IS NULL;
+UPDATE users SET last_transfer_week = '' WHERE last_transfer_week IS NULL;
+"""
+
+# v8: daily_score_history 增加 net_score（当天净增分），用于周/月榜
+# 净增分 = 当天 daily_score - 当天 start_of_day_score（即当日实际贡献分）
+[[migrations]]
+tag = "v8"
+sql = """
+ALTER TABLE daily_score_history ADD COLUMN net_score INTEGER DEFAULT 0;
+
+-- 历史数据兜底：用相邻两天 daily_score 差分回填（近似值）
+-- 对每个 (user_id, date)：
+--   若存在前一条历史记录 prev_daily_score，则 net = MAX(0, daily_score - prev_daily_score)
+--   否则（该用户最早一条记录）net = daily_score
+UPDATE daily_score_history
+SET net_score = CASE
+    WHEN (
+        SELECT h2.daily_score
+        FROM daily_score_history h2
+        WHERE h2.user_id = daily_score_history.user_id
+          AND h2.date < daily_score_history.date
+        ORDER BY h2.date DESC
+        LIMIT 1
+    ) IS NULL
+    THEN daily_score
+    ELSE MAX(
+        0,
+        daily_score - (
+            SELECT h2.daily_score
+            FROM daily_score_history h2
+            WHERE h2.user_id = daily_score_history.user_id
+              AND h2.date < daily_score_history.date
+            ORDER BY h2.date DESC
+            LIMIT 1
+        )
+    )
+END
+WHERE net_score = 0 OR net_score IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_dsh_user_date ON daily_score_history(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_dsh_date ON daily_score_history(date);
+"""
