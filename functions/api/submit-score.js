@@ -140,6 +140,10 @@ export async function onRequest(context) {
         const todayQuizMax = newTodayWarmup + newTodayRank + newTodayChallenge;
         const newDailyScore = Math.max(startOfDay, todayQuizMax) + loginBonus;
 
+        // 当天净增分 = 今日最终 daily_score - 今日起点
+        // 用于周/月榜聚合，避免把继承的 start_of_day_score 重复累计
+        const netScore = Math.max(0, newDailyScore - startOfDay);
+
         // ===== 7. 写入所有表 =====
         await db.prepare(`
             UPDATE users SET
@@ -164,10 +168,11 @@ export async function onRequest(context) {
             VALUES (?, ?, ?, ?, ?)
         `).bind(userId, today, newTodayWarmup, newTodayRank, newTodayChallenge).run();
 
+        // ⚠️ 关键修改：daily_score_history 同时写入 net_score
         await db.prepare(`
-            INSERT OR REPLACE INTO daily_score_history (user_id, date, daily_score)
-            VALUES (?, ?, ?)
-        `).bind(userId, today, newDailyScore).run();
+            INSERT OR REPLACE INTO daily_score_history (user_id, date, daily_score, net_score)
+            VALUES (?, ?, ?, ?)
+        `).bind(userId, today, newDailyScore, netScore).run();
 
         // ===== 8. 返回最新完整用户数据 =====
         const updated = await db.prepare(`

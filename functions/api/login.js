@@ -143,6 +143,17 @@ export async function onRequest(context) {
             `).bind(newDailyScore, today, user.id).run();
             user.daily_score = newDailyScore;
             user.reward_date = today;
+
+            // ⚠️ 关键修改：把登录奖励同步写入 daily_score_history（含 net_score）
+            // 否则"只登录不答题"的用户当天没有 history 记录，周/月榜会漏算登录奖励
+            const netScore = Math.max(0, newDailyScore - startOfDay);
+            await db.prepare(`
+                INSERT INTO daily_score_history (user_id, date, daily_score, net_score)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, date) DO UPDATE SET
+                    daily_score = excluded.daily_score,
+                    net_score = excluded.net_score
+            `).bind(user.id, today, newDailyScore, netScore).run();
         }
 
         // 排位赛今日记录
