@@ -1,18 +1,13 @@
 // /functions/api/rank/period.js
-// 周榜 / 月榜：按"当日净增分"(net_score) 聚合
-// 口径：period_score = Σ(区间内每日 net_score)
-// net_score 由 submit-score.js / login.js 在写入 daily_score_history 时计算：
-//   net_score = max(0, 当天最终 daily_score - 当天 start_of_day_score)
+// 周榜 / 月榜
+// 优先用 daily_score_history.net_score 聚合；
+// 若 net_score 列不存在（v8 迁移未执行），自动降级为"相邻日差分"计算。
 import { getBeijingDate } from '../_utils.js';
 
-/**
- * 计算某日期所在 ISO 周的周一和周日（北京时间日期字符串 YYYY-MM-DD）
- * ISO 周：周一为一周第一天，周日为最后一天
- */
 function getWeekRange(todayStr) {
     const [y, m, d] = todayStr.split('-').map(Number);
     const dt = new Date(Date.UTC(y, m - 1, d));
-    const dow = dt.getUTCDay(); // 0=周日, 1=周一, ..., 6=周六
+    const dow = dt.getUTCDay();
     const diffToMonday = (dow === 0 ? -6 : 1 - dow);
     const monday = new Date(dt);
     monday.setUTCDate(dt.getUTCDate() + diffToMonday);
@@ -24,55 +19,104 @@ function getWeekRange(todayStr) {
     };
 }
 
-/**
- * 计算某日期所在自然月的月初和月末
- */
 function getMonthRange(todayStr) {
     const [y, m] = todayStr.split('-').map(Number);
     const startDate = `${y}-${String(m).padStart(2, '0')}-01`;
-    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // m 月 0 日 = 上月末
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const endDate = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     return { startDate, endDate };
 }
 
+function jsonResp(obj, status = 200) {
+    return new Response(JSON.stringify(obj), {
+        status,
+        headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
 export async function onRequest(context) {
     const { request, env } = context;
-    const headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json',
-    };
 
     try {
         const url = new URL(request.url);
         const period = (url.searchParams.get('period') || 'week').toLowerCase();
         if (period !== 'week' && period !== 'month') {
-            return new Response(JSON.stringify({ error: 'period 参数必须为 week 或 month' }), {
-                status: 400, headers,
-            });
+            return jsonResp({ error: 'period 参数必须为 week 或 month' }, 400);
+        }
+
+        if (!env || !env.D1_DB) {
+            return jsonResp({ error: 'D1_DB 绑定缺失' }, 500);
+        }
+        if (typeof getBeijingDate !== 'function') {
+            return jsonResp({ error: 'getBeijingDate 未从 _utils.js 正确导出' }, 500);
         }
 
         const db = env.D1_DB;
-        const today = getBeijingDate(); // 北京时间 YYYY-MM-DD
+        const today = getBeijingDate();
+        const { startDate, endDate } = period === 'week' ? getWeekRange(today) : getMonthRange(today);
 
-        const range = period === 'week' ? getWeekRange(today) : getMonthRange(today);
-        const { startDate, endDate } = range;
+        // 1. 检测 net_score 列是否存在
+        let hasNetScore = false;
+        try {
+            const info = await db.prepare(`PRAGMA table_info(daily_score_history)`).all();
+            const cols = (info.results || []).map(c => c.name);
+            hasNetScore = cols.includes('net_score');
+        } catch (_) {
+            hasNetScore = false;
+        }
 
-        // 按用户聚合区间内净增分
-        // COALESCE 兜底：net_score 为 NULL 的老数据视为 0（v8 迁移已回填近似值）
-        const rows = await db.prepare(`
-            SELECT
-                u.id,
-                u.name,
-                u.unit,
-                SUM(COALESCE(h.net_score, 0)) AS period_score,
-                COUNT(h.date)                 AS active_days
-            FROM daily_score_history h
-            JOIN users u ON u.id = h.user_id
-            WHERE h.date >= ? AND h.date <= ?
-            GROUP BY u.id, u.name, u.unit
-            HAVING period_score > 0
-            ORDER BY period_score DESC, u.name ASC
-        `).bind(startDate, endDate).all();
+        let rows;
+        if (hasNetScore) {
+            // 方案 B：直接 SUM(net_score)
+            rows = await db.prepare(`
+                SELECT
+                    u.id, u.name, u.unit,
+                    SUM(COALESCE(h.net_score, 0)) AS period_score,
+                    COUNT(h.date) AS active_days
+                FROM daily_score_history h
+                JOIN users u ON u.id = h.user_id
+                WHERE h.date >= ? AND h.date <= ?
+                GROUP BY u.id, u.name, u.unit
+                HAVING period_score > 0
+                ORDER BY period_score DESC, u.name ASC
+            `).bind(startDate, endDate).all();
+        } else {
+            // 方案 A 降级：相邻日差分
+            rows = await db.prepare(`
+                WITH base AS (
+                    SELECT h.user_id, h.date, h.daily_score,
+                           LAG(h.daily_score) OVER (
+                               PARTITION BY h.user_id ORDER BY h.date
+                           ) AS prev_daily_score
+                    FROM daily_score_history h
+                    WHERE h.date >= ? AND h.date <= ?
+                ),
+                with_prev AS (
+                    SELECT b.user_id, b.date, b.daily_score,
+                           COALESCE(
+                               b.prev_daily_score,
+                               (SELECT h2.daily_score FROM daily_score_history h2
+                                WHERE h2.user_id = b.user_id AND h2.date < b.date
+                                ORDER BY h2.date DESC LIMIT 1)
+                           ) AS prev_score
+                    FROM base b
+                ),
+                net AS (
+                    SELECT user_id,
+                           SUM(CASE WHEN prev_score IS NULL THEN daily_score
+                                    ELSE MAX(0, daily_score - prev_score) END) AS period_score,
+                           COUNT(*) AS active_days
+                    FROM with_prev GROUP BY user_id
+                )
+                SELECT u.id, u.name, u.unit, n.period_score, n.active_days
+                FROM net n JOIN users u ON u.id = n.user_id
+                WHERE n.period_score > 0
+                ORDER BY n.period_score DESC, u.name ASC
+            `).bind(startDate, endDate).all();
+        }
 
         const ranking = (rows.results || []).map((r, idx) => ({
             rank: idx + 1,
@@ -82,17 +126,18 @@ export async function onRequest(context) {
             active_days: Number(r.active_days) || 0,
         }));
 
-        return new Response(JSON.stringify({
+        return jsonResp({
             success: true,
             period,
             startDate,
             endDate,
+            mode: hasNetScore ? 'net_score' : 'diff_fallback',
             updatedAt: new Date().toISOString(),
             ranking,
-        }), { headers });
+        });
 
     } catch (err) {
         console.error('[RankPeriod] 错误:', err);
-        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
+        return jsonResp({ error: err.message || String(err), stack: err.stack || '' }, 500);
     }
 }
