@@ -131,9 +131,12 @@ export async function onRequest(context) {
         }
 
         // ===== 每日登录奖励（按日突破式）=====
+        // ✅ 修复：不再用 startOfDay + 2 直接覆盖，而是取 max(startOfDay, daily_score) + 2
+        // 避免"先答题后登录"时把答题分覆盖掉
         if (user.reward_date !== today) {
-            const startOfDay = user.start_of_day_score || user.daily_score || 0;
-            const newDailyScore = startOfDay + 2;
+            const startOfDay = user.start_of_day_score || 0;
+            const currentDaily = user.daily_score || 0;
+            const newDailyScore = Math.max(startOfDay, currentDaily) + 2;
             await db.prepare(`
                 UPDATE users SET
                     daily_score = ?,
@@ -144,7 +147,7 @@ export async function onRequest(context) {
             user.daily_score = newDailyScore;
             user.reward_date = today;
 
-            // ⚠️ 关键修改：把登录奖励同步写入 daily_score_history（含 net_score）
+            // 登录奖励同步写入 daily_score_history（含 net_score）
             // 否则"只登录不答题"的用户当天没有 history 记录，周/月榜会漏算登录奖励
             const netScore = Math.max(0, newDailyScore - startOfDay);
             await db.prepare(`

@@ -1,6 +1,7 @@
 // /functions/api/submit-score.js
 // 前端只上报本次答题结果，后端重算所有分数
 // ⚠️ 不设置严格分数上限，仅做合理性兜底（防止负数/异常大数）
+// ⚠️ 登录奖励只由 login.js 发放，本接口不写 reward_date（修复一）
 import { getBeijingDate, getISOWeek, runWeeklyTransfer } from './_utils.js';
 
 export async function onRequest(context) {
@@ -133,7 +134,9 @@ export async function onRequest(context) {
             ? Math.max(user.challenge_score || 0, finalScore)
             : (user.challenge_score || 0);
 
-        // 登录奖励：save 时若今天未登录，补 +2
+        // 登录奖励：仅用于重算 daily_score 时与 login.js 对齐口径
+        // （login.js 当天首次登录已把 +2 写入 daily_score 和 reward_date）
+        // ⚠️ 本接口不再写 reward_date，避免抢先刷掉登录奖励
         const loginBonus = (user.reward_date === today) ? 2 : 0;
 
         // 按日突破式（不设上限）
@@ -145,12 +148,12 @@ export async function onRequest(context) {
         const netScore = Math.max(0, newDailyScore - startOfDay);
 
         // ===== 7. 写入所有表 =====
+        // ⚠️ 修复一：不再写 reward_date，登录奖励只由 login.js 发放
         await db.prepare(`
             UPDATE users SET
                 warmup_score = ?, rank_score = ?, challenge_score = ?,
                 today_warmup_score = ?, today_rank_score = ?, today_challenge_score = ?,
                 daily_score = ?, daily_score_date = ?,
-                reward_date = ?,
                 version = version + 1,
                 updated_at = ?
             WHERE id = ?
@@ -158,7 +161,6 @@ export async function onRequest(context) {
             newWarmupScore, newRankScore, newChallengeScore,
             newTodayWarmup, newTodayRank, newTodayChallenge,
             newDailyScore, today,
-            today,
             now,
             userId
         ).run();
@@ -168,7 +170,7 @@ export async function onRequest(context) {
             VALUES (?, ?, ?, ?, ?)
         `).bind(userId, today, newTodayWarmup, newTodayRank, newTodayChallenge).run();
 
-        // ⚠️ 关键修改：daily_score_history 同时写入 net_score
+        // daily_score_history 同时写入 net_score
         await db.prepare(`
             INSERT OR REPLACE INTO daily_score_history (user_id, date, daily_score, net_score)
             VALUES (?, ?, ?, ?)
