@@ -1,7 +1,7 @@
 // /functions/api/rank/period.js
-// 周榜 / 月榜：按 daily_scores 各赛制当日最高分累计
-// 口径：period_score = Σ(区间内每日 warmup_score + rank_score + challenge_score)
-// 说明：热身赛、排位赛、挑战赛均计入；同一天同一赛制只计当日最高分（由 submit-score 的 INSERT OR REPLACE 保证）
+// 周榜 / 月榜：按 daily_score_history.net_score 聚合（与 daily_score 体系一致）
+// 口径：period_score = Σ(区间内每日净增分 net_score)，含登录奖励
+// 明细：warmup_total / rank_total / challenge_total 从 daily_scores 区间汇总，仅展示
 import { getBeijingDate } from '../_utils.js';
 
 /**
@@ -43,6 +43,32 @@ function jsonResp(obj, status = 200) {
     });
 }
 
+/**
+ * 检查表是否存在
+ */
+async function tableExists(db, tableName) {
+    try {
+        const t = await db.prepare(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
+        ).bind(tableName).first();
+        return !!t;
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * 检查某列是否存在
+ */
+async function columnExists(db, tableName, columnName) {
+    try {
+        const cols = await db.prepare(`PRAGMA table_info(${tableName})`).all();
+        return (cols.results || []).some(c => c.name === columnName);
+    } catch (_) {
+        return false;
+    }
+}
+
 export async function onRequest(context) {
     const { request, env } = context;
 
@@ -64,52 +90,79 @@ export async function onRequest(context) {
         const today = getBeijingDate();
         const { startDate, endDate } = period === 'week' ? getWeekRange(today) : getMonthRange(today);
 
-        // 检查 daily_scores 表是否存在，避免 no such table 直接 500
-        let hasDailyScores = false;
-        try {
-            const t = await db.prepare(
-                `SELECT name FROM sqlite_master WHERE type='table' AND name='daily_scores'`
-            ).first();
-            hasDailyScores = !!t;
-        } catch (_) {
-            hasDailyScores = false;
-        }
-
-        if (!hasDailyScores) {
+        // ===== 前置检查：daily_score_history 表与 net_score 列 =====
+        const hasHistory = await tableExists(db, 'daily_score_history');
+        if (!hasHistory) {
             return jsonResp({
                 success: true,
                 period,
                 startDate,
                 endDate,
-                mode: 'daily_scores_sum',
-                warning: 'daily_scores 表不存在，暂无周/月榜数据',
+                mode: 'net_score_sum',
+                warning: 'daily_score_history 表不存在，暂无周/月榜数据',
+                updatedAt: new Date().toISOString(),
+                ranking: [],
+            });
+        }
+        const hasNetScore = await columnExists(db, 'daily_score_history', 'net_score');
+        if (!hasNetScore) {
+            return jsonResp({
+                success: true,
+                period,
+                startDate,
+                endDate,
+                mode: 'net_score_sum',
+                warning: 'daily_score_history.net_score 列不存在，请执行迁移 v8',
                 updatedAt: new Date().toISOString(),
                 ranking: [],
             });
         }
 
-        // 按用户聚合区间内 daily_scores 三赛制最高分
-        const rows = await db.prepare(`
-            SELECT
-                u.id,
-                u.name,
-                u.unit,
-                SUM(COALESCE(d.warmup_score, 0))    AS warmup_total,
-                SUM(COALESCE(d.rank_score, 0))      AS rank_total,
-                SUM(COALESCE(d.challenge_score, 0)) AS challenge_total,
-                SUM(
-                    COALESCE(d.warmup_score, 0)
-                  + COALESCE(d.rank_score, 0)
-                  + COALESCE(d.challenge_score, 0)
-                ) AS period_score,
-                COUNT(d.date) AS active_days
-            FROM daily_scores d
-            JOIN users u ON u.id = d.user_id
-            WHERE d.date >= ? AND d.date <= ?
-            GROUP BY u.id, u.name, u.unit
-            HAVING period_score > 0
-            ORDER BY period_score DESC, u.name ASC
-        `).bind(startDate, endDate).all();
+        // ===== 主聚合：以 daily_score_history 为准 =====
+        // 三赛制明细通过关联 daily_scores 取得（若表存在），否则为 0
+        const hasDailyScores = await tableExists(db, 'daily_scores');
+
+        let rows;
+        if (hasDailyScores) {
+            rows = await db.prepare(`
+                SELECT
+                    u.id,
+                    u.name,
+                    u.unit,
+                    SUM(COALESCE(h.net_score, 0)) AS period_score,
+                    COUNT(DISTINCT h.date)        AS active_days,
+                    SUM(COALESCE(ds.warmup_score, 0))    AS warmup_total,
+                    SUM(COALESCE(ds.rank_score, 0))      AS rank_total,
+                    SUM(COALESCE(ds.challenge_score, 0)) AS challenge_total
+                FROM daily_score_history h
+                JOIN users u ON u.id = h.user_id
+                LEFT JOIN daily_scores ds
+                       ON ds.user_id = h.user_id AND ds.date = h.date
+                WHERE h.date >= ? AND h.date <= ?
+                GROUP BY u.id, u.name, u.unit
+                HAVING period_score > 0
+                ORDER BY period_score DESC, u.name ASC
+            `).bind(startDate, endDate).all();
+        } else {
+            // 无 daily_scores 表时，明细全部置 0
+            rows = await db.prepare(`
+                SELECT
+                    u.id,
+                    u.name,
+                    u.unit,
+                    SUM(COALESCE(h.net_score, 0)) AS period_score,
+                    COUNT(DISTINCT h.date)        AS active_days,
+                    0 AS warmup_total,
+                    0 AS rank_total,
+                    0 AS challenge_total
+                FROM daily_score_history h
+                JOIN users u ON u.id = h.user_id
+                WHERE h.date >= ? AND h.date <= ?
+                GROUP BY u.id, u.name, u.unit
+                HAVING period_score > 0
+                ORDER BY period_score DESC, u.name ASC
+            `).bind(startDate, endDate).all();
+        }
 
         const ranking = (rows.results || []).map((r, idx) => ({
             rank: idx + 1,
@@ -127,7 +180,7 @@ export async function onRequest(context) {
             period,
             startDate,
             endDate,
-            mode: 'daily_scores_sum',
+            mode: 'net_score_sum',
             updatedAt: new Date().toISOString(),
             ranking,
         });
